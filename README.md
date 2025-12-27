@@ -1,5 +1,7 @@
 # koishi-plugin-isthattrue
 
+[![npm](https://img.shields.io/npm/v/koishi-plugin-isthattrue?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-isthattrue)
+
 事实核查插件 - 使用多 Agent LLM 架构验证消息真实性
 
 ## 功能特点
