@@ -32,6 +32,12 @@ export interface Config {
   outputFormat: 'auto' | 'markdown' | 'plain'
   /** 是否使用合并转发消息 */
   useForwardMessage: boolean
+  /** 合并转发最大节点数，超过则回退普通消息 */
+  forwardMaxNodes: number
+  /** 合并转发总字符数上限，超过则回退普通消息 */
+  forwardMaxTotalChars: number
+  /** 合并转发单节点字符数上限 */
+  forwardMaxSegmentChars: number
   /** 是否绕过代理 */
   bypassProxy: boolean
   /** 是否打印 LLM 请求体和响应 */
@@ -112,6 +118,24 @@ export const Config: Schema<Config> = Schema.intersect([
     useForwardMessage: Schema.boolean()
       .default(true)
       .description('使用合并转发消息展示详情 (仅支持QQ)'),
+
+    forwardMaxNodes: Schema.number()
+      .min(0)
+      .max(99)
+      .default(8)
+      .description('合并转发最大节点数，超过则回退普通消息（0 表示直接回退）'),
+
+    forwardMaxTotalChars: Schema.number()
+      .min(0)
+      .max(20000)
+      .default(3000)
+      .description('合并转发总字符数上限，超过则回退普通消息（0 表示直接回退）'),
+
+    forwardMaxSegmentChars: Schema.number()
+      .min(50)
+      .max(2000)
+      .default(500)
+      .description('合并转发单节点字符数上限'),
 
     bypassProxy: Schema.boolean()
       .default(false)

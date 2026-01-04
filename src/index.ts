@@ -108,8 +108,28 @@ export function apply(ctx: Context, config: Config) {
             result.reasoning,
             result.sources,
             result.confidence,
-            result.processingTime
+            result.processingTime,
+            config.forwardMaxSegmentChars
           )
+
+          const maxNodes = config.forwardMaxNodes ?? 8
+          const maxTotalChars = config.forwardMaxTotalChars ?? 3000
+          const totalChars = details.reduce((sum, detail) => sum + detail.length, 0)
+
+          if (maxNodes <= 0 || maxTotalChars <= 0 || details.length > maxNodes || totalChars > maxTotalChars) {
+            logger.warn(`合并转发内容过长，回退普通消息: nodes=${details.length}/${maxNodes}, chars=${totalChars}/${maxTotalChars}`)
+            const output = formatVerificationOutput(
+              textToDisplay,
+              searchResultsForOutput,
+              result.verdict,
+              result.reasoning,
+              result.sources,
+              result.confidence,
+              result.processingTime,
+              format as 'markdown' | 'plain'
+            )
+            return output
+          }
 
           // 构建转发消息节点
           const forwardNodes = details.map(detail =>
@@ -117,7 +137,13 @@ export function apply(ctx: Context, config: Config) {
           )
 
           // 发送主消息
-          await session.send(summary)
+          let summarySent = false
+          try {
+            await session.send(summary)
+            summarySent = true
+          } catch (sendSummaryError) {
+            logger.warn('发送摘要失败，将尝试回退由 Koishi 发送:', sendSummaryError)
+          }
 
           // 尝试发送合并转发，失败则回退到普通消息
           try {
@@ -126,7 +152,14 @@ export function apply(ctx: Context, config: Config) {
             logger.warn('合并转发发送失败，回退到普通消息:', forwardError)
             // 回退：逐条发送详情
             for (const detail of details) {
-              await session.send(detail)
+              try {
+                await session.send(detail)
+              } catch (detailError) {
+                logger.warn('回退详情发送失败，已忽略:', detailError)
+              }
+            }
+            if (!summarySent) {
+              return summary
             }
           }
           return

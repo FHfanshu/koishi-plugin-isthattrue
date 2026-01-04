@@ -252,12 +252,12 @@ export function formatForwardMessages(
   reasoning: string,
   sources: string[],
   confidence: number,
-  processingTime: number
+  processingTime: number,
+  maxSegmentLength: number = 500
 ): {
   summary: string
   details: string[]
 } {
-  const MAX_SEGMENT_LENGTH = 500
   const MAX_SOURCES = 5
   const confidenceValue = Math.round(confidence * 100)
 
@@ -268,8 +268,8 @@ export function formatForwardMessages(
   const details: string[] = []
 
   // 1. 判决理由（截断）
-  const truncatedReasoning = reasoning.length > MAX_SEGMENT_LENGTH
-    ? reasoning.substring(0, MAX_SEGMENT_LENGTH) + '...'
+  const truncatedReasoning = reasoning.length > maxSegmentLength
+    ? reasoning.substring(0, maxSegmentLength) + '...'
     : reasoning
   details.push(`📝 判决依据\n\n${truncatedReasoning}`)
 
@@ -285,8 +285,8 @@ export function formatForwardMessages(
       }
     }
 
-    const truncatedFindings = cleanFindings.length > MAX_SEGMENT_LENGTH
-      ? cleanFindings.substring(0, MAX_SEGMENT_LENGTH) + '...'
+    const truncatedFindings = cleanFindings.length > maxSegmentLength
+      ? cleanFindings.substring(0, maxSegmentLength) + '...'
       : cleanFindings
     details.push(`🔍 ${r.perspective}\n\n${truncatedFindings}`)
   }

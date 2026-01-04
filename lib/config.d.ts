@@ -31,6 +31,12 @@ export interface Config {
     outputFormat: 'auto' | 'markdown' | 'plain';
     /** 是否使用合并转发消息 */
     useForwardMessage: boolean;
+    /** 合并转发最大节点数，超过则回退普通消息 */
+    forwardMaxNodes: number;
+    /** 合并转发总字符数上限，超过则回退普通消息 */
+    forwardMaxTotalChars: number;
+    /** 合并转发单节点字符数上限 */
+    forwardMaxSegmentChars: number;
     /** 是否绕过代理 */
     bypassProxy: boolean;
     /** 是否打印 LLM 请求体和响应 */

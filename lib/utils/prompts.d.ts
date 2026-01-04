@@ -69,7 +69,7 @@ export declare function formatForwardMessages(content: string, searchResults: Ar
     agentId: string;
     perspective: string;
     findings: string;
-}>, verdict: string, reasoning: string, sources: string[], confidence: number, processingTime: number): {
+}>, verdict: string, reasoning: string, sources: string[], confidence: number, processingTime: number, maxSegmentLength?: number): {
     summary: string;
     details: string[];
 };
