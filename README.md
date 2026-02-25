@@ -66,8 +66,16 @@ tof               # 引用一条消息后使用，核查被引用的消息
 | verbose | false | 显示详细验证过程 |
 | outputFormat | auto | 输出格式（auto/markdown/plain） |
 | useForwardMessage | true | 使用合并转发消息展示详情（仅 QQ） |
+| enableChatlunaTool | true | 注册为 Chatluna 工具（供 Agent 调用） |
+| chatlunaToolName | fact_check | Chatluna 工具名称 |
 | bypassProxy | false | 绕过系统代理 |
 | logLLMDetails | false | 打印 LLM 请求详情（调试用） |
+
+### Chatluna 工具调用
+
+- 插件会注册一个 Chatluna 工具（默认名：`fact_check`）
+- 建议在 Chatluna `plugin`（Agent）模式下使用，让 Bot 可自动调用工具
+- 在角色预设中可加入规则：遇到“真假求证/辟谣/是否属实”优先调用 `fact_check`
 
 ## 工作流程
 

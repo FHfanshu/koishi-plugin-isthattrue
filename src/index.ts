@@ -3,6 +3,7 @@ import { Config } from './config'
 import { MainAgent } from './agents'
 import { MessageParser } from './services/messageParser'
 import { ChatlunaAdapter } from './services/chatluna'
+import { registerFactCheckTool } from './services/factCheckTool'
 import { formatVerificationOutput, formatForwardMessages } from './utils/prompts'
 import { Verdict } from './types'
 
@@ -38,6 +39,9 @@ export { Config } from './config'
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger('isthattrue')
   const messageParser = new MessageParser(ctx)
+
+  // 注册 Chatluna 工具
+  registerFactCheckTool(ctx, config)
 
   // 注册 tof 指令
   ctx.command('tof', '验证消息的真实性')

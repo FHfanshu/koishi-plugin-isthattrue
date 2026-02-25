@@ -18,6 +18,7 @@ export declare class VerifyAgent {
      * @param images 可选的图片 base64 列表（多模态验证）
      */
     verify(originalContent: MessageContent, searchResults: SearchResult[], images?: string[]): Promise<VerificationResult>;
+    private compactSearchResults;
     /**
      * 解析验证响应
      */

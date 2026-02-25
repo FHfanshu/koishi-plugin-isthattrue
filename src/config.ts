@@ -42,6 +42,16 @@ export interface Config {
   bypassProxy: boolean
   /** 是否打印 LLM 请求体和响应 */
   logLLMDetails: boolean
+  /** 是否注册为 Chatluna 工具 */
+  enableChatlunaTool: boolean
+  /** Chatluna 工具名称 */
+  chatlunaToolName: string
+  /** Chatluna 工具描述 */
+  chatlunaToolDescription: string
+  /** Chatluna 工具输入最大长度 */
+  chatlunaToolMaxInputChars: number
+  /** Chatluna 工具返回来源数量上限 */
+  chatlunaToolMaxSources: number
 }
 
 // 使用 Chatluna 的动态模型选择器
@@ -144,5 +154,29 @@ export const Config: Schema<Config> = Schema.intersect([
     logLLMDetails: Schema.boolean()
       .default(false)
       .description('是否打印 LLM 请求体和响应详情 (Debug用)'),
+
+    enableChatlunaTool: Schema.boolean()
+      .default(true)
+      .description('注册事实核查为 Chatluna 可调用工具'),
+
+    chatlunaToolName: Schema.string()
+      .default('fact_check')
+      .description('Chatluna 工具名称（需与预设中提及名称一致）'),
+
+    chatlunaToolDescription: Schema.string()
+      .default('用于事实核查。输入待验证声明文本，返回结论、置信度、判决依据和来源链接。适用于辟谣、真假求证和时效性事件核验。')
+      .description('Chatluna 工具描述，影响模型何时调用该工具'),
+
+    chatlunaToolMaxInputChars: Schema.number()
+      .min(100)
+      .max(10000)
+      .default(1200)
+      .description('Chatluna 工具单次输入文本最大字符数'),
+
+    chatlunaToolMaxSources: Schema.number()
+      .min(1)
+      .max(20)
+      .default(5)
+      .description('Chatluna 工具返回来源链接数量上限'),
   }).description('其他设置'),
 ])

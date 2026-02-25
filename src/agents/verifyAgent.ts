@@ -40,8 +40,8 @@ export class VerifyAgent {
     this.logger.info(`开始综合验证...${hasImages ? ' (包含图片)' : ''}`)
 
     try {
-      // 构建验证请求
-      const prompt = buildVerifyPrompt(
+      // 构建验证请求（默认使用完整搜索结果）
+      let prompt = buildVerifyPrompt(
         originalContent.text,
         searchResults.map(r => ({
           perspective: r.perspective,
@@ -57,15 +57,42 @@ export class VerifyAgent {
         : VERIFY_AGENT_SYSTEM_PROMPT
 
       // 调用低幻觉率模型进行验证
-      const response = await this.chatluna.chatWithRetry(
-        {
-          model: this.config.mainModel,
-          message: prompt,
-          systemPrompt: systemPrompt,
-          images: images,  // 传递图片
-        },
-        this.config.maxRetries
-      )
+      let response
+      try {
+        response = await this.chatluna.chatWithRetry(
+          {
+            model: this.config.mainModel,
+            message: prompt,
+            systemPrompt: systemPrompt,
+            images: images,  // 传递图片
+          },
+          this.config.maxRetries
+        )
+      } catch (error) {
+        // 如果首次验证失败，尝试缩短搜索结果后再请求一次
+        this.logger.warn('验证请求失败，尝试使用压缩后的搜索结果重试...')
+        const compactedResults = this.compactSearchResults(searchResults)
+        prompt = buildVerifyPrompt(
+          originalContent.text,
+          compactedResults.map(r => ({
+            perspective: r.perspective,
+            findings: r.findings,
+            sources: r.sources,
+          })),
+          hasImages
+        )
+        response = await this.chatluna.chatWithRetry(
+          {
+            model: this.config.mainModel,
+            message: prompt,
+            systemPrompt: systemPrompt,
+            images: images,
+          },
+          0
+        )
+        // 用压缩结果参与输出与来源聚合，避免前端显示超长内容
+        searchResults = compactedResults
+      }
 
       // 解析验证结果
       const parsed = this.parseVerifyResponse(response.content)
@@ -99,6 +126,25 @@ export class VerifyAgent {
     }
   }
 
+  private compactSearchResults(searchResults: SearchResult[]): SearchResult[] {
+    const maxFindingsChars = 800
+    return searchResults.map(result => {
+      let findings = result.findings || ''
+      if (result.agentId === 'chatluna-search') {
+        const summaryEndIndex = findings.indexOf('==============================')
+        if (summaryEndIndex !== -1) {
+          findings = findings.substring(0, summaryEndIndex + 32) + '\n\n(搜索详情已省略)'
+        }
+      }
+
+      if (findings.length > maxFindingsChars) {
+        findings = findings.substring(0, maxFindingsChars) + '...'
+      }
+
+      return { ...result, findings }
+    })
+  }
+
   /**
    * 解析验证响应
    */
@@ -124,7 +170,7 @@ export class VerifyAgent {
         verdict: this.normalizeVerdict(parsed.verdict),
         reasoning: parsed.reasoning || parsed.key_evidence || '无详细说明',
         sources: parsed.sources || [],
-        confidence: parsed.confidence || 0.5,
+        confidence: parsed.confidence ?? 0.5,
       }
     } catch {
       // 解析失败，尝试从文本中提取判决

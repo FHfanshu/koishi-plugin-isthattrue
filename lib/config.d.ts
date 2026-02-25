@@ -41,5 +41,15 @@ export interface Config {
     bypassProxy: boolean;
     /** 是否打印 LLM 请求体和响应 */
     logLLMDetails: boolean;
+    /** 是否注册为 Chatluna 工具 */
+    enableChatlunaTool: boolean;
+    /** Chatluna 工具名称 */
+    chatlunaToolName: string;
+    /** Chatluna 工具描述 */
+    chatlunaToolDescription: string;
+    /** Chatluna 工具输入最大长度 */
+    chatlunaToolMaxInputChars: number;
+    /** Chatluna 工具返回来源数量上限 */
+    chatlunaToolMaxSources: number;
 }
 export declare const Config: Schema<Config>;

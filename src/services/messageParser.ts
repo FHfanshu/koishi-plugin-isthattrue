@@ -168,7 +168,8 @@ export class MessageParser {
         responseType: 'arraybuffer',
       })
 
-      const buffer = Buffer.from(response)
+      const rawData = (response as any)?.data ?? response
+      const buffer = Buffer.from(rawData as ArrayBuffer)
       return buffer.toString('base64')
     } catch (error) {
       this.ctx.logger('isthattrue').error('图片转换失败:', error)
