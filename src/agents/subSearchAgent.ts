@@ -3,7 +3,7 @@ import { Config } from '../config'
 import { SearchResult } from '../types'
 import { ChatlunaAdapter } from '../services/chatluna'
 import {
-  SUB_SEARCH_AGENT_SYSTEM_PROMPT,
+  DEEP_SEARCH_AGENT_SYSTEM_PROMPT,
   buildSubSearchPrompt,
 } from '../utils/prompts'
 
@@ -52,7 +52,7 @@ export class SubSearchAgent {
         {
           model: modelName,
           message: promptOverride || buildSubSearchPrompt(claim),
-          systemPrompt: systemPromptOverride || SUB_SEARCH_AGENT_SYSTEM_PROMPT,
+          systemPrompt: systemPromptOverride || DEEP_SEARCH_AGENT_SYSTEM_PROMPT,
           enableSearch: true,
         },
         this.config.tof.maxRetries
