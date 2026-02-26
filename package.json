@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-chatluna-fact-check",
-  "version": "0.2.2",
+  "version": "0.2.9",
   "description": "事实核查插件 - 使用多Agent LLM验证消息真实性",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
