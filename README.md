@@ -1,13 +1,13 @@
-# koishi-plugin-isthattrue
+# koishi-plugin-chatluna-fact-check
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-isthattrue?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-isthattrue)
+[![npm](https://img.shields.io/npm/v/koishi-plugin-chatluna-fact-check?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-chatluna-fact-check)
 
 事实核查插件 - 使用多 Agent LLM 架构验证消息真实性
 
 ## 功能特点
 
 - 多 Agent 协作：主控 Agent 编排任务，子搜索 Agent 并行检索
-- 多搜索源支持：Tavily、Anspire、Kimi、智谱、Chatluna Search
+- 多搜索源支持：Grok/Tavily/可选模型，并支持 `fact_check` 工具模式
 - 支持文本和图片内容（OCR 识别）
 - 可引用消息进行核查
 - 输出判定结果：TRUE / FALSE / PARTIALLY_TRUE / UNCERTAIN
@@ -15,7 +15,7 @@
 ## 安装
 
 ```bash
-npm install koishi-plugin-isthattrue
+npm install koishi-plugin-chatluna-fact-check
 ```
 
 ## 依赖
@@ -45,11 +45,8 @@ tof               # 引用一条消息后使用，核查被引用的消息
 | 配置项 | 说明 |
 |--------|------|
 | tavilyApiKey | Tavily API Key（可选） |
-| anspireApiKey | Anspire API Key（可选） |
-| kimiApiKey | Kimi API Key（可选） |
-| zhipuApiKey | 智谱 API Key（可选） |
-| chatlunaSearchModel | Chatluna Search 使用的模型 |
-| enableChatlunaSearch | 启用 Chatluna 搜索集成 |
+| chatlunaSearchModel | Chatluna Search 使用的模型（可选） |
+| enableChatlunaSearch | 启用 Chatluna 搜索集成（默认关闭） |
 | chatlunaSearchDiversifyModel | 搜索关键词多样化模型 |
 
 ### Agent 配置
@@ -74,6 +71,7 @@ tof               # 引用一条消息后使用，核查被引用的消息
 ### Chatluna 工具调用
 
 - 插件会注册一个 Chatluna 工具（默认名：`fact_check`）
+- `fact_check` 实际定位为 chatluna-search 的 LLMSearch 替代
 - 建议在 Chatluna `plugin`（Agent）模式下使用，让 Bot 可自动调用工具
 - 在角色预设中可加入规则：遇到“真假求证/辟谣/是否属实”优先调用 `fact_check`
 
@@ -99,10 +97,7 @@ src/
 │   ├── chatluna.ts       # Chatluna LLM 适配器
 │   ├── chatlunaSearch.ts # Chatluna Search 集成
 │   ├── messageParser.ts  # 消息解析（文本/图片）
-│   ├── tavily.ts         # Tavily 搜索
-│   ├── anspire.ts        # Anspire 搜索
-│   ├── kimi.ts           # Kimi 搜索
-│   └── zhipu.ts          # 智谱搜索
+│   └── tavily.ts         # Tavily 搜索
 └── utils/
     └── prompts.ts        # LLM Prompt 模板
 ```

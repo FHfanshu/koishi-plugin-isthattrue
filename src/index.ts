@@ -1,4 +1,5 @@
-import { Context, Schema, h } from 'koishi'
+import { Context, h } from 'koishi'
+import path from 'node:path'
 import { Config } from './config'
 import { MainAgent } from './agents'
 import { MessageParser } from './services/messageParser'
@@ -7,8 +8,11 @@ import { registerFactCheckTool } from './services/factCheckTool'
 import { formatVerificationOutput, formatForwardMessages } from './utils/prompts'
 import { Verdict } from './types'
 
-export const name = 'isthattrue'
-export const inject = ['chatluna']
+export const name = 'chatluna-fact-check'
+export const inject = {
+  required: ['chatluna'],
+  optional: ['console'],
+}
 export const usage = `
 ## 事实核查插件
 
@@ -35,13 +39,35 @@ export const usage = `
 `
 
 export { Config } from './config'
+const import_meta = {} as { url?: string }
 
 export function apply(ctx: Context, config: Config) {
-  const logger = ctx.logger('isthattrue')
-  const messageParser = new MessageParser(ctx)
+  const logger = ctx.logger('chatluna-fact-check')
+  const messageParser = new MessageParser(ctx, {
+    imageTimeoutMs: Math.min(config.tof.timeout, 30000),
+    maxImageBytes: 8 * 1024 * 1024,
+  })
 
   // 注册 Chatluna 工具
   registerFactCheckTool(ctx, config)
+
+  // 注入控制台前端入口（与 affinity 同款注入方式）
+  ctx.inject(['console'], (innerCtx) => {
+    const consoleService = (innerCtx as any).console
+    const packageBase = path.resolve(ctx.baseDir, 'node_modules/koishi-plugin-chatluna-fact-check')
+    const browserEntry = import_meta.url
+      ? import_meta.url.replace(/\/src\/[^/]+$/, '/client/index.ts')
+      : path.resolve(__dirname, '../client/index.ts')
+    const entry = process.env.KOISHI_BASE
+      ? [process.env.KOISHI_BASE + '/dist/index.js']
+      : process.env.KOISHI_ENV === 'browser'
+        ? [browserEntry]
+        : {
+          dev: path.resolve(packageBase, 'client/index.ts'),
+          prod: path.resolve(packageBase, 'dist'),
+        }
+    consoleService?.addEntry?.(entry)
+  })
 
   // 注册 tof 指令
   ctx.command('tof', '验证消息的真实性')
@@ -58,10 +84,10 @@ export function apply(ctx: Context, config: Config) {
       logger.info(`用户 ${session.userId} 在 ${session.channelId} 触发 tof 命令`)
       logger.debug('Session elements:', JSON.stringify(session.elements))
 
-      const verbose = options?.verbose ?? config.verbose
-      const format = config.outputFormat === 'auto'
+      const verbose = options?.verbose ?? config.tof.verbose
+      const format = config.tof.outputFormat === 'auto'
         ? (session.platform === 'qq' ? 'plain' : 'markdown')
-        : config.outputFormat
+        : config.tof.outputFormat
 
       // 1. 检查 Chatluna 服务
       const chatluna = new ChatlunaAdapter(ctx, config)
@@ -101,7 +127,7 @@ export function apply(ctx: Context, config: Config) {
         }))
 
         // 检查是否使用合并转发（仅支持 OneBot 协议）
-        const useForward = config.useForwardMessage && session.platform === 'onebot'
+        const useForward = config.tof.useForwardMessage && session.platform === 'onebot'
 
         if (useForward) {
           // 使用合并转发消息
@@ -113,11 +139,11 @@ export function apply(ctx: Context, config: Config) {
             result.sources,
             result.confidence,
             result.processingTime,
-            config.forwardMaxSegmentChars
+            config.tof.forwardMaxSegmentChars
           )
 
-          const maxNodes = config.forwardMaxNodes ?? 8
-          const maxTotalChars = config.forwardMaxTotalChars ?? 3000
+          const maxNodes = config.tof.forwardMaxNodes ?? 8
+          const maxTotalChars = config.tof.forwardMaxTotalChars ?? 3000
           const totalChars = details.reduce((sum, detail) => sum + detail.length, 0)
 
           if (maxNodes <= 0 || maxTotalChars <= 0 || details.length > maxNodes || totalChars > maxTotalChars) {
@@ -195,9 +221,9 @@ export function apply(ctx: Context, config: Config) {
       if (!session) return '无法获取会话信息'
       if (!text?.trim()) return '请提供需要验证的文本'
 
-      const format = config.outputFormat === 'auto'
+      const format = config.tof.outputFormat === 'auto'
         ? (session.platform === 'qq' ? 'plain' : 'markdown')
-        : config.outputFormat
+        : config.tof.outputFormat
 
       const chatluna = new ChatlunaAdapter(ctx, config)
       if (!chatluna.isAvailable()) {
@@ -231,5 +257,5 @@ export function apply(ctx: Context, config: Config) {
       }
     })
 
-  logger.info('isthattrue 插件已加载')
+  logger.info('chatluna-fact-check 插件已加载')
 }

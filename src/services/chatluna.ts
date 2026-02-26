@@ -1,4 +1,4 @@
-import { Context, Service } from 'koishi'
+import { Context } from 'koishi'
 import { ChatRequest, ChatResponse } from '../types'
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { MessageContentComplex } from '@langchain/core/messages'
@@ -22,15 +22,18 @@ interface ChatModel {
   ): Promise<{ content: string | object }>
 }
 
+const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+
 /**
  * Chatluna 集成服务
  * 封装对 koishi-plugin-chatluna 的调用
  */
 export class ChatlunaAdapter {
   private logger
+  private bypassProxyWarned = false
 
   constructor(private ctx: Context, private config?: any) {
-    this.logger = ctx.logger('isthattrue')
+    this.logger = ctx.logger('chatluna-fact-check')
   }
 
   /**
@@ -49,116 +52,92 @@ export class ChatlunaAdapter {
     }
 
     const startTime = Date.now()
-    let originalProxies: Record<string, string | undefined> = {}
 
-    try {
-      // 1. 处理代理绕过
-      if (this.config?.bypassProxy) {
-        const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        proxyVars.forEach(v => {
-          originalProxies[v] = process.env[v]
-          delete process.env[v]
-        })
-        this.logger.debug('已临时移除系统代理环境变量')
-      } else {
-        // 打印当前环境变量中的代理信息
-        const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        const activeProxies = proxyVars
-          .filter(v => process.env[v])
-          .map(v => `${v}=${process.env[v]}`)
+    // 打印当前环境变量中的代理信息
+    const activeProxies = PROXY_VARS
+      .filter(v => process.env[v])
+      .map(v => `${v}=${process.env[v]}`)
 
-        if (activeProxies.length > 0) {
-          this.logger.debug(`当前环境代理: ${activeProxies.join(', ')}`)
-        } else {
-          this.logger.debug('当前环境未检测到系统代理环境变量')
-        }
+    if (this.config?.bypassProxy) {
+      if (!this.bypassProxyWarned) {
+        this.logger.warn('bypassProxy 已启用，但为避免并发污染不会修改全局代理环境变量；请在 chatluna/系统层配置无代理模型端点。')
+        this.bypassProxyWarned = true
       }
+    } else if (activeProxies.length > 0) {
+      this.logger.debug(`当前环境代理：${activeProxies.join(', ')}`)
+    } else {
+      this.logger.debug('当前环境未检测到系统代理环境变量')
+    }
 
-      // 使用 createChatModel 创建模型实例（无需 room）
-      const modelRef = await this.ctx.chatluna.createChatModel(request.model)
-      const model = modelRef.value
+    // 使用 createChatModel 创建模型实例（无需 room）
+    const modelRef = await this.ctx.chatluna.createChatModel(request.model)
+    const model = modelRef.value
 
-      if (!model) {
-        throw new Error(`无法创建模型: ${request.model}，请确保模型已正确配置`)
-      }
+    if (!model) {
+      throw new Error(`无法创建模型：${request.model}，请确保模型已正确配置`)
+    }
 
-      // 构建消息数组
-      const messages: Array<HumanMessage | SystemMessage> = []
+    // 构建消息数组
+    const messages: Array<HumanMessage | SystemMessage> = []
 
-      if (request.systemPrompt) {
-        messages.push(new SystemMessage(request.systemPrompt))
-      }
+    if (request.systemPrompt) {
+      messages.push(new SystemMessage(request.systemPrompt))
+    }
 
-      // 构建用户消息内容
-      const messageContent = request.message
+    // 构建用户消息内容
+    const messageContent = request.message
 
-      // 如果有图片，构建多模态消息
-      if (request.images && request.images.length > 0) {
-        const multimodalContent: MessageContentComplex[] = [
-          { type: 'text', text: request.message }
-        ]
+    // 如果有图片，构建多模态消息
+    if (request.images && request.images.length > 0) {
+      const multimodalContent: MessageContentComplex[] = [
+        { type: 'text', text: request.message }
+      ]
 
-        for (const base64Image of request.images) {
-          multimodalContent.push({
-            type: 'image_url',
-            image_url: `data:image/jpeg;base64,${base64Image}`
-          })
-        }
-
-        messages.push(new HumanMessage({ content: multimodalContent }))
-        this.logger.debug(`构建多模态消息，包含 ${request.images.length} 张图片`)
-      } else {
-        messages.push(new HumanMessage(messageContent))
-      }
-
-      // 打印请求体
-      if (this.config?.logLLMDetails) {
-        this.logger.info(`[LLM Request] Model: ${request.model}\nSystem: ${request.systemPrompt || 'None'}\nMessage: ${typeof messageContent === 'string' ? messageContent.substring(0, 500) : 'Complex content'}`)
-      }
-
-      // 调用模型
-      const response = await model.invoke(messages, {
-        temperature: 0.3, // 低温度以减少幻觉
-      })
-
-      // 恢复代理环境变量
-      if (this.config?.bypassProxy) {
-        Object.keys(originalProxies).forEach(v => {
-          if (originalProxies[v] !== undefined) {
-            process.env[v] = originalProxies[v]
-          }
+      for (const base64Image of request.images) {
+        multimodalContent.push({
+          type: 'image_url',
+          image_url: `data:image/jpeg;base64,${base64Image}`
         })
       }
 
-      const processingTime = Date.now() - startTime
-      this.logger.debug(`Chatluna 请求完成，耗时 ${processingTime}ms`)
+      messages.push(new HumanMessage({ content: multimodalContent }))
+      this.logger.debug(`构建多模态消息，包含 ${request.images.length} 张图片`)
+    } else {
+      messages.push(new HumanMessage(messageContent))
+    }
 
-      // 处理响应内容
-      const content = typeof response.content === 'string'
-        ? response.content
-        : JSON.stringify(response.content)
+    // 打印请求体
+    if (this.config?.logLLMDetails) {
+      this.logger.info(`[LLM Request] Model: ${request.model}\nSystem: ${request.systemPrompt || 'None'}\nMessage: ${typeof messageContent === 'string' ? messageContent.substring(0, 500) : 'Complex content'}`)
+    }
 
-      // 打印响应体
-      if (this.config?.logLLMDetails) {
-        this.logger.info(`[LLM Response] Model: ${request.model}\nContent: ${content}`)
-      }
+    // 调用模型
+    const invokeOptions: any = {
+      temperature: 0.3, // 低温度以减少幻觉
+    }
+    if (request.enableSearch) {
+      invokeOptions.enableSearch = true
+    }
 
-      return {
-        content,
-        model: request.model,
-        sources: this.extractSources(content),
-      }
-    } catch (error) {
-      // 发生错误也要恢复环境变量
-      if (this.config?.bypassProxy) {
-        Object.keys(originalProxies).forEach(v => {
-          if (originalProxies[v] !== undefined) {
-            process.env[v] = originalProxies[v]
-          }
-        })
-      }
-      this.logger.error('Chatluna 请求失败:', error)
-      throw error
+    const response = await model.invoke(messages, invokeOptions)
+
+    const processingTime = Date.now() - startTime
+    this.logger.debug(`Chatluna 请求完成，耗时 ${processingTime}ms`)
+
+    // 处理响应内容
+    const content = typeof response.content === 'string'
+      ? response.content
+      : JSON.stringify(response.content)
+
+    // 打印响应体
+    if (this.config?.logLLMDetails) {
+      this.logger.info(`[LLM Response] Model: ${request.model}\nContent: ${content}`)
+    }
+
+    return {
+      content,
+      model: request.model,
+      sources: this.extractSources(content),
     }
   }
 
@@ -185,7 +164,7 @@ export class ChatlunaAdapter {
 
         // 最后一次尝试前切换到备用模型
         if (attempt === maxRetries - 1 && fallbackModel && fallbackModel !== currentModel) {
-          this.logger.info(`切换到备用模型: ${fallbackModel}`)
+          this.logger.info(`切换到备用模型：${fallbackModel}`)
           currentModel = fallbackModel
         }
 
@@ -212,8 +191,8 @@ export class ChatlunaAdapter {
       sources.push(...matches)
     }
 
-    // 匹配 [来源: xxx] 格式
-    const sourceRegex = /\[来源[：:]\s*([^\]]+)\]/g
+    // 匹配 [来源：xxx] 格式
+    const sourceRegex = /\[来源 [：:]\s*([^\]]+)\]/g
     let match
     while ((match = sourceRegex.exec(content)) !== null) {
       sources.push(match[1])

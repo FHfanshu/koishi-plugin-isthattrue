@@ -21,7 +21,7 @@ export class SubSearchAgent {
     private config: Config
   ) {
     this.chatluna = new ChatlunaAdapter(ctx, config)
-    this.logger = ctx.logger('isthattrue')
+    this.logger = ctx.logger('chatluna-fact-check')
   }
 
   /**
@@ -29,25 +29,41 @@ export class SubSearchAgent {
    * @param claim 原始声明文本
    */
   async deepSearch(claim: string): Promise<SearchResult> {
-    this.logger.info(`[SubSearchAgent] 开始深度搜索，模型: ${this.config.subSearchModel}`)
+    return this.deepSearchWithModel(
+      claim,
+      this.config.tof.searchModel,
+      'grok-deep-search',
+      'Grok 深度搜索 (X/Twitter)'
+    )
+  }
+
+  async deepSearchWithModel(
+    claim: string,
+    modelName: string,
+    agentId = 'multi-search',
+    perspective = '多源深度搜索',
+    promptOverride?: string,
+    systemPromptOverride?: string
+  ): Promise<SearchResult> {
+    this.logger.info(`[SubSearchAgent] 开始深度搜索，模型: ${modelName}`)
 
     try {
       const response = await this.chatluna.chatWithRetry(
         {
-          model: this.config.subSearchModel,
-          message: buildSubSearchPrompt(claim),
-          systemPrompt: SUB_SEARCH_AGENT_SYSTEM_PROMPT,
+          model: modelName,
+          message: promptOverride || buildSubSearchPrompt(claim),
+          systemPrompt: systemPromptOverride || SUB_SEARCH_AGENT_SYSTEM_PROMPT,
           enableSearch: true,
         },
-        this.config.maxRetries
+        this.config.tof.maxRetries
       )
 
       // 解析响应
       const parsed = this.parseResponse(response.content)
 
       return {
-        agentId: 'grok-deep-search',
-        perspective: 'Grok 深度搜索 (X/Twitter)',
+        agentId,
+        perspective,
         findings: parsed.findings || response.content,
         sources: parsed.sources || response.sources || [],
         confidence: parsed.confidence || 0.8,
@@ -55,11 +71,13 @@ export class SubSearchAgent {
     } catch (error) {
       this.logger.error('[SubSearchAgent] 搜索失败:', error)
       return {
-        agentId: 'grok-deep-search',
-        perspective: 'Grok 深度搜索 (X/Twitter)',
+        agentId,
+        perspective,
         findings: `深度搜索失败: ${(error as Error).message}`,
         sources: [],
         confidence: 0,
+        failed: true,
+        error: (error as Error).message,
       }
     }
   }

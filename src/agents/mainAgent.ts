@@ -6,6 +6,7 @@ import { VerifyAgent } from './verifyAgent'
 import { ChatlunaSearchAgent } from '../services/chatlunaSearch'
 import { ChatlunaAdapter } from '../services/chatluna'
 import { MessageParser } from '../services/messageParser'
+import { TavilySearchAgent } from '../services/tavily'
 import { injectCensorshipBypass } from '../utils/url'
 import { IMAGE_DESCRIPTION_PROMPT } from '../utils/prompts'
 
@@ -19,6 +20,7 @@ export class MainAgent {
   private verifyAgent: VerifyAgent
   private chatluna: ChatlunaAdapter
   private messageParser: MessageParser
+  private tavilySearchAgent: TavilySearchAgent
   private logger
 
   constructor(
@@ -29,8 +31,12 @@ export class MainAgent {
     this.chatlunaSearchAgent = new ChatlunaSearchAgent(ctx, config)
     this.verifyAgent = new VerifyAgent(ctx, config)
     this.chatluna = new ChatlunaAdapter(ctx, config)
-    this.messageParser = new MessageParser(ctx)
-    this.logger = ctx.logger('isthattrue')
+    this.messageParser = new MessageParser(ctx, {
+      imageTimeoutMs: Math.min(config.tof.timeout, 30000),
+      maxImageBytes: 8 * 1024 * 1024,
+    })
+    this.tavilySearchAgent = new TavilySearchAgent(ctx, config)
+    this.logger = ctx.logger('chatluna-fact-check')
   }
 
   /**
@@ -61,44 +67,63 @@ export class MainAgent {
       }
 
       // Phase 1+2: 并行执行搜索
-      this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok)...')
+      this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok + Tavily)...')
 
-      const searchPromises: Promise<SearchResult | null>[] = []
+      const searchTasks: Array<{ name: string; promise: Promise<SearchResult | null> }> = []
 
       // Chatluna 搜索 (通用网页)
-      if (this.chatlunaSearchAgent.isAvailable()) {
-        searchPromises.push(
-          this.withTimeout(
+      if (this.chatlunaSearchAgent.isAvailable() && this.config.tof.enableChatlunaSearch) {
+        searchTasks.push({
+          name: 'ChatlunaSearch',
+          promise: this.withTimeout(
             this.chatlunaSearchAgent.search(searchText),
-            this.config.timeout,
+            this.config.tof.timeout,
             'ChatlunaSearch'
           )
-        )
+        })
       }
 
       // Grok 深度搜索 (独立，专注 X/Twitter)
-      searchPromises.push(
-        this.withTimeout(
+      searchTasks.push({
+        name: 'GrokSearch',
+        promise: this.withTimeout(
           this.subSearchAgent.deepSearch(searchText),
-          this.config.timeout,
+          this.config.tof.timeout,
           'GrokSearch'
         )
-      )
+      })
 
-      const results = await Promise.allSettled(searchPromises)
+      if (this.tavilySearchAgent.isAvailable()) {
+        searchTasks.push({
+          name: 'TavilySearch',
+          promise: this.withTimeout(
+            this.tavilySearchAgent.search(searchText),
+            this.config.tof.timeout,
+            'TavilySearch'
+          )
+        })
+      }
 
-      // 收集成功的结果
-      const searchResults: SearchResult[] = results
+      const results = await Promise.allSettled(searchTasks.map(t => t.promise))
+
+      const allSearchResults: SearchResult[] = results
         .filter((r): r is PromiseFulfilledResult<SearchResult | null> =>
           r.status === 'fulfilled' && r.value !== null)
         .map(r => r.value!)
 
+      const searchResults = allSearchResults.filter(result => !result.failed)
+
       // 记录失败的搜索
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
-          this.logger.warn(`搜索 ${i === 0 ? 'Chatluna' : 'Grok'} 失败: ${r.reason}`)
+          this.logger.warn(`搜索 ${searchTasks[i]?.name || i} 失败: ${r.reason}`)
         }
       })
+      allSearchResults
+        .filter(result => result.failed)
+        .forEach(result => {
+          this.logger.warn(`搜索 ${result.perspective} 失败: ${result.error || result.findings}`)
+        })
 
       this.logger.info(`[Phase 1+2] 搜索完成，成功 ${searchResults.length} 个`)
 
@@ -156,16 +181,19 @@ export class MainAgent {
     timeout: number,
     name: string
   ): Promise<T | null> {
+    let timer: NodeJS.Timeout | null = null
     try {
       return await Promise.race([
         promise,
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`${name} 超时`)), timeout)
+          timer = setTimeout(() => reject(new Error(`${name} 超时`)), timeout)
         )
       ])
     } catch (error) {
       this.logger.warn(`[${name}] 失败: ${(error as Error).message}`)
       return null
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }
 
@@ -175,7 +203,7 @@ export class MainAgent {
   private async extractImageDescription(images: string[]): Promise<string> {
     try {
       const response = await this.chatluna.chat({
-        model: this.config.mainModel,
+        model: this.config.tof.model,
         message: IMAGE_DESCRIPTION_PROMPT,
         images: images,
       })

@@ -24,6 +24,10 @@ export interface SearchResult {
   sources: string[]
   /** 可信度评分 0-1 */
   confidence: number
+  /** 是否为失败结果 */
+  failed?: boolean
+  /** 失败原因（可选） */
+  error?: string
 }
 
 /**

@@ -2,6 +2,8 @@
  * Prompt 模板集合
  */
 
+import { removeCensorshipBypass } from './url'
+
 /**
  * 主控 Agent (Gemini) 编排提示词
  */
@@ -33,6 +35,22 @@ export const SUB_SEARCH_AGENT_SYSTEM_PROMPT = `你是事实核查搜索员，专
 `
 
 /**
+ * fact_check 工具专用系统提示词（避免使用“声明”字样）
+ */
+export const FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT = `你是事实核查搜索员，专门使用 X (Twitter) 和网络搜索核查待验证内容。
+
+重点搜索：
+- X (Twitter) 上的相关讨论和官方账号消息
+- 新闻报道和权威媒体来源
+- 社交媒体上的第一手证据
+
+输出 JSON：
+\`\`\`json
+{"findings":"详细发现摘要","sources":["来源URL"],"confidence":0.0-1.0}
+\`\`\`
+`
+
+/**
  * 构建子搜索 Agent 的请求
  */
 export function buildSubSearchPrompt(claim: string): string {
@@ -43,6 +61,21 @@ export function buildSubSearchPrompt(claim: string): string {
 搜索要点：
 1. 在 X/Twitter 上搜索相关话题和讨论
 2. 查找官方账号的声明或澄清
+3. 搜索相关新闻报道
+4. 注意时间线和来源可信度`
+}
+
+/**
+ * fact_check 工具专用搜索请求（避免使用“声明”字样）
+ */
+export function buildFactCheckToolSearchPrompt(content: string): string {
+  return `请核查以下内容的真实性，重点搜索 X (Twitter) 和社交媒体上的相关讨论和证据：
+
+"${content}"
+
+搜索要点：
+1. 在 X/Twitter 上搜索相关话题和讨论
+2. 查找官方账号消息或澄清
 3. 搜索相关新闻报道
 4. 注意时间线和来源可信度`
 }
@@ -190,7 +223,7 @@ export function formatVerificationOutput(
 
     if (sources.length > 0) {
       output += `\n源：\n`
-      output += sources.map(s => `• ${s}`).join('\n')
+      output += sources.map(s => `• ${removeCensorshipBypass(s)}`).join('\n')
       output += `\n`
     }
 
@@ -221,7 +254,7 @@ ${reasoning}
   if (sources.length > 0) {
     output += `
 🔗 **参考来源:**
-${sources.map(s => `• ${s}`).join('\n')}
+${sources.map(s => `• ${removeCensorshipBypass(s)}`).join('\n')}
 `
   }
 
@@ -294,7 +327,7 @@ export function formatForwardMessages(
   // 3. 参考来源（限制数量）
   if (sources.length > 0) {
     const limitedSources = sources.slice(0, MAX_SOURCES)
-    const sourcesText = limitedSources.map(s => `• ${s.substring(0, 100)}`).join('\n')
+    const sourcesText = limitedSources.map(s => `• ${removeCensorshipBypass(s).substring(0, 100)}`).join('\n')
     const suffix = sources.length > MAX_SOURCES ? `\n... 及其他 ${sources.length - MAX_SOURCES} 个来源` : ''
     details.push(`🔗 参考来源\n\n${sourcesText}${suffix}`)
   }

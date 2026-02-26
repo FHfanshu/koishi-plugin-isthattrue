@@ -21,7 +21,15 @@ export class VerifyAgent {
     private config: Config
   ) {
     this.chatluna = new ChatlunaAdapter(ctx, config)
-    this.logger = ctx.logger('isthattrue')
+    this.logger = ctx.logger('chatluna-fact-check')
+  }
+
+  private clampConfidence(value: unknown, fallback = 0.5): number {
+    const numeric = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(numeric)) return fallback
+    if (numeric < 0) return 0
+    if (numeric > 1) return 1
+    return numeric
   }
 
   /**
@@ -40,10 +48,12 @@ export class VerifyAgent {
     this.logger.info(`开始综合验证...${hasImages ? ' (包含图片)' : ''}`)
 
     try {
-      // 构建验证请求（默认使用完整搜索结果）
+      let finalSearchResults = this.compactSearchResults(searchResults)
+
+      // 构建验证请求（默认使用压缩后的搜索结果，避免超长上下文）
       let prompt = buildVerifyPrompt(
         originalContent.text,
-        searchResults.map(r => ({
+        finalSearchResults.map(r => ({
           perspective: r.perspective,
           findings: r.findings,
           sources: r.sources,
@@ -58,20 +68,22 @@ export class VerifyAgent {
 
       // 调用低幻觉率模型进行验证
       let response
+      let usedSearchResults = finalSearchResults
+
       try {
         response = await this.chatluna.chatWithRetry(
           {
-            model: this.config.mainModel,
+            model: this.config.tof.model,
             message: prompt,
             systemPrompt: systemPrompt,
             images: images,  // 传递图片
           },
-          this.config.maxRetries
+          this.config.tof.maxRetries
         )
       } catch (error) {
-        // 如果首次验证失败，尝试缩短搜索结果后再请求一次
-        this.logger.warn('验证请求失败，尝试使用压缩后的搜索结果重试...')
-        const compactedResults = this.compactSearchResults(searchResults)
+        // 如果首次验证失败，进一步缩短搜索结果再重试一次
+        this.logger.warn('验证请求失败，尝试使用更短的搜索结果重试...')
+        const compactedResults = this.compactSearchResults(searchResults, true)
         prompt = buildVerifyPrompt(
           originalContent.text,
           compactedResults.map(r => ({
@@ -83,15 +95,15 @@ export class VerifyAgent {
         )
         response = await this.chatluna.chatWithRetry(
           {
-            model: this.config.mainModel,
+            model: this.config.tof.model,
             message: prompt,
             systemPrompt: systemPrompt,
             images: images,
           },
-          0
+          0  // 不再重试
         )
-        // 用压缩结果参与输出与来源聚合，避免前端显示超长内容
-        searchResults = compactedResults
+        // 使用压缩后的结果
+        usedSearchResults = compactedResults
       }
 
       // 解析验证结果
@@ -100,10 +112,10 @@ export class VerifyAgent {
 
       const result: VerificationResult = {
         originalContent,
-        searchResults,
+        searchResults: usedSearchResults,
         verdict: parsed.verdict,
         reasoning: parsed.reasoning,
-        sources: this.aggregateSources(searchResults, parsed.sources),
+        sources: this.aggregateSources(usedSearchResults, parsed.sources),
         confidence: parsed.confidence,
         processingTime,
       }
@@ -126,8 +138,8 @@ export class VerifyAgent {
     }
   }
 
-  private compactSearchResults(searchResults: SearchResult[]): SearchResult[] {
-    const maxFindingsChars = 800
+  private compactSearchResults(searchResults: SearchResult[], aggressive = false): SearchResult[] {
+    const maxFindingsChars = aggressive ? 400 : 800
     return searchResults.map(result => {
       let findings = result.findings || ''
       if (result.agentId === 'chatluna-search') {
@@ -170,7 +182,7 @@ export class VerifyAgent {
         verdict: this.normalizeVerdict(parsed.verdict),
         reasoning: parsed.reasoning || parsed.key_evidence || '无详细说明',
         sources: parsed.sources || [],
-        confidence: parsed.confidence ?? 0.5,
+        confidence: this.clampConfidence(parsed.confidence, 0.5),
       }
     } catch {
       // 解析失败，尝试从文本中提取判决
@@ -178,7 +190,7 @@ export class VerifyAgent {
         verdict: this.extractVerdictFromText(content),
         reasoning: content,
         sources: [],
-        confidence: 0.3,
+        confidence: this.clampConfidence(0.3, 0.3),
       }
     }
   }

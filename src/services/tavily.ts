@@ -27,8 +27,8 @@ export class TavilySearchAgent {
     private ctx: Context,
     private config: Config
   ) {
-    this.apiKey = config.tavilyApiKey
-    this.logger = ctx.logger('isthattrue')
+    this.apiKey = config.tof.tavilyApiKey
+    this.logger = ctx.logger('chatluna-fact-check')
   }
 
   /**
@@ -56,7 +56,7 @@ export class TavilySearchAgent {
           max_results: 5,
         },
         {
-          timeout: this.config.timeout,
+          timeout: this.config.tof.timeout,
         }
       )
 
@@ -81,6 +81,8 @@ export class TavilySearchAgent {
         findings: `搜索失败: ${(error as Error).message}`,
         sources: [],
         confidence: 0,
+        failed: true,
+        error: (error as Error).message,
       }
     }
   }

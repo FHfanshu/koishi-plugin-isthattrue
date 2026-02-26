@@ -1,14 +1,18 @@
 {
-  "name": "koishi-plugin-isthattrue",
-  "version": "0.1.12",
+  "name": "koishi-plugin-chatluna-fact-check",
+  "version": "0.2.2",
   "description": "事实核查插件 - 使用多Agent LLM验证消息真实性",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
-    "lib"
+    "lib",
+    "client",
+    "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && vite build",
+    "build:server": "tsc -b",
+    "build:client": "vite build",
     "watch": "tsc -b --watch"
   },
   "keywords": [
@@ -21,10 +25,14 @@
   "author": "",
   "license": "MIT",
   "peerDependencies": {
+    "@koishijs/plugin-console": "^5.0.0",
     "koishi": "^4.18.4",
     "koishi-plugin-chatluna": "^1.0.0"
   },
   "peerDependenciesMeta": {
+    "@koishijs/plugin-console": {
+      "optional": true
+    },
     "koishi-plugin-chatluna": {
       "optional": false
     }
@@ -33,8 +41,11 @@
     "@langchain/core": "^0.3.26"
   },
   "devDependencies": {
+    "@koishijs/client": "^5.30.4",
     "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^6.3.6",
+    "vue": "^3.5.13"
   },
   "koishi": {
     "description": {
@@ -43,6 +54,9 @@
     "service": {
       "required": [
         "chatluna"
+      ],
+      "optional": [
+        "console"
       ]
     }
   }

@@ -3,6 +3,10 @@ import { Config } from '../config'
 import { SearchResult } from '../types'
 import { ChatlunaAdapter } from './chatluna'
 
+const MAX_RESULTS_PER_QUERY = 8
+const MAX_TOTAL_RESULTS = 24
+const MAX_DESC_LENGTH = 320
+
 /**
  * Chatluna Search 服务
  * 使用 chatluna-search-service 插件进行联网搜索
@@ -22,10 +26,57 @@ export class ChatlunaSearchAgent {
     private ctx: Context,
     private config: Config
   ) {
-    this.logger = ctx.logger('isthattrue')
+    this.logger = ctx.logger('chatluna-fact-check')
     this.chatluna = new ChatlunaAdapter(ctx, config)
     // 延迟初始化工具，等待 chatluna-search-service 完成注册
     this.initTool()
+  }
+
+  private normalizeResultItems(searchResult: any): any[] {
+    if (!searchResult) return []
+
+    if (Array.isArray(searchResult)) {
+      return searchResult
+    }
+
+    if (typeof searchResult === 'string') {
+      try {
+        const parsed = JSON.parse(searchResult)
+        return this.normalizeResultItems(parsed)
+      } catch {
+        return [{ description: searchResult }]
+      }
+    }
+
+    if (typeof searchResult === 'object') {
+      if (Array.isArray(searchResult.results)) return searchResult.results
+      if (Array.isArray(searchResult.items)) return searchResult.items
+      if (Array.isArray(searchResult.data)) return searchResult.data
+      if (searchResult.url || searchResult.title || searchResult.description || searchResult.content) {
+        return [searchResult]
+      }
+    }
+
+    return []
+  }
+
+  private normalizeUrl(url: string): string {
+    try {
+      const u = new URL(url)
+      u.hash = ''
+      let normalized = u.toString()
+      if (normalized.endsWith('/')) {
+        normalized = normalized.slice(0, -1)
+      }
+      return normalized
+    } catch {
+      return (url || '').trim()
+    }
+  }
+
+  private truncate(text: string, maxLength: number): string {
+    if (!text) return ''
+    return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
   }
 
   private async initTool() {
@@ -82,7 +133,7 @@ export class ChatlunaSearchAgent {
     try {
       const tool = this.toolInfo.createTool({
         embeddings: this.emptyEmbeddings,
-        summaryType: 'speed'
+        summaryType: 'performance'
       })
 
       this.logger.debug(`[ChatlunaSearch] 创建的 tool: name=${tool?.name}, type=${typeof tool}`)
@@ -100,8 +151,8 @@ export class ChatlunaSearchAgent {
    * 检查服务是否可用
    */
   isAvailable(): boolean {
-    const enabled = this.config.enableChatlunaSearch !== false
-    const hasModel = !!this.config.chatlunaSearchModel
+    const enabled = this.config.tof.enableChatlunaSearch !== false
+    const hasModel = !!this.config.tof.chatlunaSearchModel
     const hasChatluna = !!(this.ctx as any).chatluna?.platform
     return enabled && hasModel && hasChatluna
   }
@@ -111,7 +162,7 @@ export class ChatlunaSearchAgent {
    * 使用小模型生成多个不同角度的搜索关键词
    */
   private async diversifyQuery(query: string): Promise<string[]> {
-    const diversifyModel = this.config.chatlunaSearchDiversifyModel
+    const diversifyModel = this.config.tof.chatlunaSearchDiversifyModel
     if (!diversifyModel) {
       return [query]
     }
@@ -128,7 +179,7 @@ export class ChatlunaSearchAgent {
 3. 每个关键词单独一行
 4. 只输出关键词，不要编号或其他说明`,
         message: `请为以下内容生成3个多样化的搜索关键词：\n\n${query}`,
-      }, this.config.maxRetries)
+      }, this.config.tof.maxRetries)
 
       const keywords = response.content
         .split('\n')
@@ -151,7 +202,7 @@ export class ChatlunaSearchAgent {
    */
   async search(query: string): Promise<SearchResult> {
     const startTime = Date.now()
-    const modelName = this.config.chatlunaSearchModel
+    const modelName = this.config.tof.chatlunaSearchModel
     const shortModelName = modelName.includes('/') ? modelName.split('/').pop()! : modelName
     this.logger.info(`[ChatlunaSearch] 开始搜索，模型: ${modelName}`)
 
@@ -200,17 +251,8 @@ export class ChatlunaSearchAgent {
             throw new Error('搜索工具没有可用的调用方法')
           }
 
-          // 解析搜索结果
-          let searchData: any[] = []
-          if (typeof searchResult === 'string') {
-            try {
-              searchData = JSON.parse(searchResult)
-            } catch {
-              searchData = [{ description: searchResult }]
-            }
-          } else if (Array.isArray(searchResult)) {
-            searchData = searchResult
-          }
+          const searchData = this.normalizeResultItems(searchResult)
+            .slice(0, MAX_RESULTS_PER_QUERY)
 
           return searchData.map(item => ({ ...item, searchQuery: q }))
         } catch (err) {
@@ -224,32 +266,47 @@ export class ChatlunaSearchAgent {
 
       // 收集所有搜索结果
       const allSearchData: any[] = []
-      const allSources: string[] = []
 
       for (const results of searchResultsArray) {
         if (Array.isArray(results)) {
           for (const item of results) {
             allSearchData.push(item)
-            if (item.url && !allSources.includes(item.url)) {
-              allSources.push(item.url)
-            }
           }
         }
       }
 
-      // 统计信息
-      const totalResults = allSearchData.length
-      this.logger.info(`[ChatlunaSearch] 共获取 ${totalResults} 条搜索结果，来自 ${queries.length} 个关键词`)
+      const dedupedSearchData: any[] = []
+      const seenKeys = new Set<string>()
+      for (const item of allSearchData) {
+        const url = this.normalizeUrl(item?.url || '')
+        const key = url || `${item?.title || ''}|${item?.description || item?.content || ''}`
+        if (!key || seenKeys.has(key)) continue
+        seenKeys.add(key)
+        dedupedSearchData.push(item)
+      }
 
-      // 格式化所有搜索结果（不截断）
-      const formattedResults = allSearchData.length > 0
-        ? allSearchData.map((item, i) =>
-            `[${i + 1}] ${item.title || '未知标题'}\n来源: ${item.url || '未知'}\n${item.description || item.content || ''}`
+      const finalSearchData = dedupedSearchData.slice(0, MAX_TOTAL_RESULTS)
+      const allSources = [...new Set(
+        finalSearchData
+          .map(item => this.normalizeUrl(item?.url || ''))
+          .filter(Boolean)
+      )]
+
+      // 统计信息
+      const totalResults = finalSearchData.length
+      this.logger.info(
+        `[ChatlunaSearch] 原始 ${allSearchData.length} 条，去重后 ${dedupedSearchData.length} 条，最终保留 ${totalResults} 条`
+      )
+
+      // 格式化搜索结果（保留必要信息并限制长度）
+      const formattedResults = finalSearchData.length > 0
+        ? finalSearchData.map((item, i) =>
+            `[${i + 1}] ${this.truncate(item.title || '未知标题', 120)}\n来源: ${item.url || '未知'}\n${this.truncate(item.description || item.content || '', MAX_DESC_LENGTH)}`
           ).join('\n\n---\n\n')
         : '未找到搜索结果'
 
       // 添加统计摘要
-      const summary = `=== Chatluna Search 统计 ===\n搜索关键词: ${queries.join(' | ')}\n返回结果数: ${totalResults}\n来源数: ${allSources.length}\n================================\n\n`
+      const summary = `=== Chatluna Search 统计 ===\n搜索关键词: ${queries.join(' | ')}\n原始结果数: ${allSearchData.length}\n去重后结果数: ${dedupedSearchData.length}\n返回结果数: ${totalResults}\n来源数: ${allSources.length}\n================================\n\n`
 
       const elapsed = Date.now() - startTime
       this.logger.info(`[ChatlunaSearch] 搜索完成，耗时 ${elapsed}ms，共 ${totalResults} 条结果`)
@@ -259,7 +316,7 @@ export class ChatlunaSearchAgent {
         perspective: `Chatluna Search (${shortModelName})`,
         findings: summary + formattedResults,
         sources: allSources,
-        confidence: totalResults > 0 ? Math.min(0.5 + totalResults * 0.05, 0.9) : 0.3,
+        confidence: totalResults > 0 ? Math.min(0.45 + allSources.length * 0.06, 0.85) : 0,
       }
     } catch (error) {
       this.logger.error('[ChatlunaSearch] 搜索失败:', error)
@@ -269,6 +326,8 @@ export class ChatlunaSearchAgent {
         findings: `搜索失败: ${(error as Error).message}`,
         sources: [],
         confidence: 0,
+        failed: true,
+        error: (error as Error).message,
       }
     }
   }

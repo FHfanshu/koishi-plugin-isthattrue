@@ -1,12 +1,35 @@
 import { Context, h } from 'koishi'
 import { MessageContent } from '../types'
 
+interface MessageParserOptions {
+  imageTimeoutMs?: number
+  maxImageBytes?: number
+}
+
+const COMMAND_ALIASES = new Set(['tof', '真假', '事实核查', 'factcheck'])
+
 /**
  * 消息解析服务
  * 用于解析引用消息中的文本和图片内容
  */
 export class MessageParser {
-  constructor(private ctx: Context) {}
+  private imageTimeoutMs: number
+  private maxImageBytes: number
+
+  constructor(
+    private ctx: Context,
+    options: MessageParserOptions = {}
+  ) {
+    this.imageTimeoutMs = options.imageTimeoutMs ?? 15000
+    this.maxImageBytes = options.maxImageBytes ?? 8 * 1024 * 1024
+  }
+
+  private stripLeadingCommand(content: string): string {
+    const trimmed = content.trimStart()
+    const firstToken = trimmed.split(/\s+/, 1)[0]?.toLowerCase() || ''
+    if (!COMMAND_ALIASES.has(firstToken)) return content
+    return trimmed.slice(firstToken.length).trimStart()
+  }
 
   /**
    * 从会话中提取引用消息的内容
@@ -75,17 +98,16 @@ export class MessageParser {
 
     // 2. 解析当前消息的内容（用户输入的文字和图片）
     const elements = session.elements || []
-    this.ctx.logger('isthattrue').debug('Parsing session elements:', JSON.stringify(elements))
+    this.ctx.logger('chatluna-fact-check').debug('Parsing session elements:', JSON.stringify(elements))
 
     let currentText = ''
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i]
       if (element.type === 'text') {
         let content = element.attrs?.content || ''
-        // 如果是第一个文本元素且包含指令别名，尝试移除它
+        // 仅在第一个文本元素命中已知指令时，移除指令词
         if (i === 0) {
-          // 移除开头的指令名或别名及随后的空格
-          content = content.replace(/^[^\s]+\s*/, '')
+          content = this.stripLeadingCommand(content)
         }
         currentText += content
       } else if (element.type === 'img' || element.type === 'image') {
@@ -105,7 +127,7 @@ export class MessageParser {
       } else {
         result.text = currentText
       }
-      this.ctx.logger('isthattrue').info(`用户附加文字: ${currentText}`)
+      this.ctx.logger('chatluna-fact-check').info(`用户附加文字: ${currentText}`)
     }
 
     if (result.text.trim() || result.images.length > 0) {
@@ -159,20 +181,30 @@ export class MessageParser {
       // 处理本地文件
       if (url.startsWith('file://')) {
         // 暂不支持本地文件
-        this.ctx.logger('isthattrue').warn('本地文件暂不支持:', url)
+        this.ctx.logger('chatluna-fact-check').warn('本地文件暂不支持:', url)
+        return null
+      }
+
+      if (!/^https?:\/\//i.test(url)) {
+        this.ctx.logger('chatluna-fact-check').warn('仅支持 http/https 图片链接:', url)
         return null
       }
 
       // 下载远程图片
       const response = await this.ctx.http.get(url, {
         responseType: 'arraybuffer',
+        timeout: this.imageTimeoutMs,
       })
 
       const rawData = (response as any)?.data ?? response
       const buffer = Buffer.from(rawData as ArrayBuffer)
+      if (buffer.length > this.maxImageBytes) {
+        this.ctx.logger('chatluna-fact-check').warn(`图片过大已跳过: ${(buffer.length / 1024 / 1024).toFixed(2)}MB > ${(this.maxImageBytes / 1024 / 1024).toFixed(2)}MB`)
+        return null
+      }
       return buffer.toString('base64')
     } catch (error) {
-      this.ctx.logger('isthattrue').error('图片转换失败:', error)
+      this.ctx.logger('chatluna-fact-check').error('图片转换失败:', error)
       return null
     }
   }
