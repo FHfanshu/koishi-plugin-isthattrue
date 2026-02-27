@@ -209,7 +209,12 @@ class FactCheckTool extends Tool {
       result.findings,
       this.config.agent.chatlunaSearchContextMaxChars
     )
+    const totalSourceCount = result.sources.length
     const sources = result.sources.slice(0, this.config.agent.chatlunaSearchContextMaxSources)
+    const domains = this.extractSourceDomains(result.sources)
+    const domainPreview = domains.length > 0
+      ? domains.slice(0, 10).join(', ')
+      : '无'
     const sourceText = sources.length > 0
       ? sources.map(s => `- ${s}`).join('\n')
       : '- 无'
@@ -217,29 +222,51 @@ class FactCheckTool extends Tool {
     return `[ChatlunaSearchContext]
 ${findings}
 
+[ChatlunaSearchMeta]
+搜索源总数: ${totalSourceCount}
+搜索源域名: ${domainPreview}
+
 [ChatlunaSearchSources]
 ${sourceText}`
   }
 
+  private extractSourceDomains(sources: string[]): string[] {
+    const domains = new Set<string>()
+    for (const source of sources || []) {
+      if (!source) continue
+      try {
+        domains.add(new URL(source).hostname)
+      } catch {
+        const simplified = source.trim().replace(/^https?:\/\//, '').split('/')[0]
+        if (simplified) {
+          domains.add(simplified)
+        }
+      }
+    }
+    return [...domains]
+  }
+
   private async buildChatlunaSearchContext(claim: string): Promise<string | null> {
     if (!this.config.agent.appendChatlunaSearchContext) {
+      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (agent.appendChatlunaSearchContext=false)')
       return null
     }
 
     const chatlunaSearchEnabled = this.config.tof.enableChatlunaSearch !== false
     const chatlunaSearchModel = this.config.tof.chatlunaSearchModel?.trim()
     if (!chatlunaSearchEnabled || !chatlunaSearchModel) {
-      this.logger.debug('[ChatlunaTool] 追加上下文已开启，但 tof.enableChatlunaSearch 或 tof.chatlunaSearchModel 未配置，已跳过')
+      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (tof.enableChatlunaSearch=false or tof.chatlunaSearchModel empty)')
       return null
     }
 
     const chatlunaSearchAgent = new ChatlunaSearchAgent(this.ctx, this.config)
     if (!chatlunaSearchAgent.isAvailable()) {
-      this.logger.debug('[ChatlunaTool] appendChatlunaSearchContext=true，但 chatluna-search-service 不可用，已跳过')
+      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (chatluna-search-service unavailable)')
       return null
     }
 
     try {
+      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: invoking chatluna-search-service')
       const searchResult = await this.withTimeout(
         chatlunaSearchAgent.search(claim),
         this.config.agent.chatlunaSearchContextTimeout,
@@ -247,8 +274,12 @@ ${sourceText}`
       )
 
       if (!searchResult || searchResult.failed) {
+        this.logger.info('[ChatlunaTool] ChatlunaSearchContext: completed but no usable result')
         return null
       }
+
+      const domains = this.extractSourceDomains(searchResult.sources)
+      this.logger.info(`[ChatlunaTool] ChatlunaSearchContext: appended (sources=${searchResult.sources.length}, domains=${domains.join(', ') || 'none'})`)
 
       return this.formatChatlunaSearchContext(searchResult)
     } catch (error) {
@@ -267,13 +298,22 @@ ${sourceText}`
       result.findings,
       this.config.agent.ollamaSearchContextMaxChars
     )
+    const totalSourceCount = result.sources.length
     const sources = result.sources.slice(0, this.config.agent.ollamaSearchContextMaxSources)
+    const domains = this.extractSourceDomains(result.sources)
+    const domainPreview = domains.length > 0
+      ? domains.slice(0, 10).join(', ')
+      : '无'
     const sourceText = sources.length > 0
       ? sources.map(s => `- ${s}`).join('\n')
       : '- 无'
 
     return `[OllamaSearchContext]
 ${findings}
+
+[OllamaSearchMeta]
+搜索源总数: ${totalSourceCount}
+搜索源域名: ${domainPreview}
 
 [OllamaSearchSources]
 ${sourceText}`
@@ -301,6 +341,8 @@ ${sourceText}`
       if (!searchResult || searchResult.failed) {
         return null
       }
+      const domains = this.extractSourceDomains(searchResult.sources)
+      this.logger.info(`[ChatlunaTool] OllamaSearchContext: appended (sources=${searchResult.sources.length}, domains=${domains.join(', ') || 'none'})`)
       return this.formatOllamaSearchContext(searchResult)
     } catch (error) {
       this.logger.warn(`[ChatlunaTool] 追加 Ollama Search 上下文失败: ${(error as Error).message}`)
@@ -331,6 +373,8 @@ ${sourceText}`
             return provider ? [provider] : []
           })()
         : this.getToolProviders()
+
+      this.logger.info(`[ChatlunaTool] Tool mode=${this.mode}, providers=${providers.map(p => `${p.key}:${p.model}`).join(', ') || 'none'}`)
 
       if (providers.length === 0) {
         if (this.mode === 'quick') {
@@ -364,6 +408,7 @@ ${sourceText}`
         const output = this.formatSingleResult(result)
         const chatlunaContext = await this.buildChatlunaSearchContext(claim)
         const ollamaContext = await this.buildOllamaSearchContext(claim)
+        this.logger.info(`[ChatlunaTool] Context append result: chatluna=${Boolean(chatlunaContext)}, ollama=${Boolean(ollamaContext)}`)
         return this.appendContext(this.appendContext(output, chatlunaContext), ollamaContext)
       }
 
@@ -452,6 +497,7 @@ ${sourceText}`
       const output = this.formatMultiResults(successResults)
       const chatlunaContext = await this.buildChatlunaSearchContext(claim)
       const ollamaContext = await this.buildOllamaSearchContext(claim)
+      this.logger.info(`[ChatlunaTool] Context append result: chatluna=${Boolean(chatlunaContext)}, ollama=${Boolean(ollamaContext)}`)
       const outputWithContext = this.appendContext(
         this.appendContext(output, chatlunaContext),
         ollamaContext

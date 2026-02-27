@@ -21,6 +21,7 @@ export interface DeepSearchTask {
 
 export class DeepSearchTaskService {
   private logger
+  private static readonly HARD_TIMEOUT_MS = 10 * 60_000
   private tasks = new Map<string, DeepSearchTask>()
   private queue: string[] = []
   private runningCount = 0
@@ -121,10 +122,16 @@ export class DeepSearchTaskService {
       task.updatedAt = task.finishedAt
     } catch (error) {
       const message = (error as Error).message || 'unknown error'
+      const now = Date.now()
       task.status = 'failed'
       task.error = message
-      task.finishedAt = Date.now()
-      task.updatedAt = task.finishedAt
+      task.finishedAt = now
+      task.updatedAt = now
+
+      if (message.includes('超时')) {
+        // 异步任务超时后立即销毁，避免长期堆积占用查询空间
+        this.tasks.delete(task.taskId)
+      }
     }
   }
 
@@ -166,7 +173,7 @@ export class DeepSearchTaskService {
     const iterationCount = Math.max(1, this.config.deepSearch.maxIterations || 1)
     const perIterationTimeout = Math.max(5000, this.config.deepSearch.perIterationTimeout || 30000)
     const computed = iterationCount * perIterationTimeout + 10_000
-    return Math.max(15_000, Math.min(computed, 15 * 60_000))
+    return Math.max(15_000, Math.min(computed, DeepSearchTaskService.HARD_TIMEOUT_MS))
   }
 
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
