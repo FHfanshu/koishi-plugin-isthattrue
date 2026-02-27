@@ -248,7 +248,7 @@ export class DeepSearchController {
       const provider = ['grok', 'gemini', 'chatgpt', 'ollama'].includes(raw?.provider)
         ? raw.provider
         : undefined
-      const useTool = ['web_search', 'browser', 'searxng', 'ollama_search'].includes(raw?.useTool)
+      const useTool = ['web_search', 'browser', 'ollama_search'].includes(raw?.useTool)
         ? raw.useTool
         : undefined
       const toolArgs = typeof raw?.toolArgs === 'object' && raw.toolArgs
@@ -258,19 +258,6 @@ export class DeepSearchController {
             params: typeof raw.toolArgs.params === 'string' ? raw.toolArgs.params.trim() : undefined,
           }
         : undefined
-      const searxngConfig = typeof raw?.searxngConfig === 'object' && raw.searxngConfig
-        ? {
-            engines: typeof raw.searxngConfig.engines === 'string'
-              ? raw.searxngConfig.engines.trim()
-              : undefined,
-            categories: typeof raw.searxngConfig.categories === 'string'
-              ? raw.searxngConfig.categories.trim()
-              : undefined,
-            numResults: Number.isFinite(Number(raw.searxngConfig.numResults))
-              ? Math.max(1, Math.min(Number(raw.searxngConfig.numResults), 50))
-              : undefined,
-          }
-        : undefined
 
       queries.push({
         query,
@@ -278,7 +265,6 @@ export class DeepSearchController {
         provider,
         useTool,
         toolArgs,
-        searxngConfig,
       })
 
       if (queries.length >= MAX_PLAN_QUERIES) break

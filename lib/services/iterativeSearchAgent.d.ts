@@ -10,7 +10,6 @@ export declare class IterativeSearchAgent {
     private config;
     private logger;
     private subSearchAgent;
-    private searXNGSearchService;
     private ollamaSearchService;
     private emptyEmbeddings;
     constructor(ctx: Context, config: Config);
@@ -32,7 +31,6 @@ export declare class IterativeSearchAgent {
     private getModelName;
     private searchWithChatLunaTool;
     private searchWithBrowser;
-    private searchWithSearXNG;
     private searchWithOllama;
     private searchWithModel;
 }

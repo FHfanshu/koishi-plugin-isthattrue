@@ -165,16 +165,6 @@ export interface DeepSearchConfig {
   useChatlunaSearchTool: boolean
   /** 允许使用 chatluna-search-service 的 browser 工具 */
   usePuppeteerBrowser: boolean
-  /** 是否启用 SearXNG 作为额外搜索源 */
-  useSearXNG: boolean
-  /** SearXNG API 基础地址 */
-  searXNGApiBase: string
-  /** SearXNG engines 参数（逗号分隔） */
-  searXNGEngines: string
-  /** SearXNG categories 参数（逗号分隔） */
-  searXNGCategories: string
-  /** SearXNG 返回结果数 */
-  searXNGNumResults: number
 }
 
 /**
@@ -188,8 +178,6 @@ export interface ApiConfig {
   ollamaSearchApiBase: string
   /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
   ollamaSearchApiKey: string
-  /** 统一 SearXNG Base URL（可被 deepSearch.searXNGApiBase 覆盖） */
-  searXNGApiBase: string
 }
 
 /**
@@ -526,33 +514,10 @@ const deepSearchChatlunaIntegrationSchema = Schema.object({
     .description('允许主控计划调用 browser 工具抓取页面'),
 }).description('Chatluna 搜索集成')
 
-const deepSearchSearXNGSchema = Schema.object({
-  useSearXNG: Schema.boolean()
-    .default(false)
-    .description('启用 SearXNG 元搜索作为 DeepSearch 的额外来源'),
-  searXNGApiBase: Schema.string()
-    .default('http://127.0.0.1:8080')
-    .description('DeepSearch 专用 SearXNG Base URL。留空时回退到 api.searXNGApiBase；需保证 /search?format=json 返回 200'),
-  searXNGEngines: Schema.string()
-    .default('google,bing,duckduckgo')
-    .description('SearXNG engines 参数，逗号分隔'),
-  searXNGCategories: Schema.string()
-    .default('general')
-    .description('SearXNG categories 参数，逗号分隔'),
-  searXNGNumResults: Schema.number()
-    .min(1)
-    .max(50)
-    .default(10)
-    .description('SearXNG 返回结果数'),
-}).description('SearXNG 搜索集成')
-
 const apiUnifiedSchema = Schema.object({
   apiKeys: Schema.array(
     Schema.tuple([
-      Schema.union([
-        Schema.const('ollama').description('Ollama Search'),
-        Schema.const('searxng').description('SearXNG'),
-      ]).description('来源'),
+      Schema.const('ollama').description('来源'),
       Schema.string().role('secret').description('API Key（可留空）'),
       Schema.string().description('Base URL（可留空）'),
       Schema.boolean().default(true).description('是否启用'),
@@ -561,7 +526,6 @@ const apiUnifiedSchema = Schema.object({
     .role('table')
     .default([
       ['ollama', '', 'https://ollama.com/api/web_search', true],
-      ['searxng', '', 'http://127.0.0.1:8080', true],
     ])
     .description('统一 API 表格配置（优先读取）。同来源取第一条已启用记录'),
   ollamaSearchApiBase: Schema.string()
@@ -571,9 +535,6 @@ const apiUnifiedSchema = Schema.object({
     .default('')
     .role('secret')
     .description('统一 Ollama Search API Key（兼容字段）。建议优先使用上方 apiKeys 表格；agent/deepSearch 同名字段可单独覆盖'),
-  searXNGApiBase: Schema.string()
-    .default('http://127.0.0.1:8080')
-    .description('统一 SearXNG Base URL（兼容字段）。建议优先使用上方 apiKeys 表格；deepSearch.searXNGApiBase 可单独覆盖'),
 }).description('API Key / Base URL 对照表')
 
 export const Config = Schema.intersect([
@@ -588,7 +549,6 @@ export const Config = Schema.intersect([
       deepSearchCoreSchema,
       deepSearchLLMSourceSchema,
       deepSearchChatlunaIntegrationSchema,
-      deepSearchSearXNGSchema,
     ]).description('DeepSearch'),
     tof: Schema.intersect([
       tofConfigSchema,

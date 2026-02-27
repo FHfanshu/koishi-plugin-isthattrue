@@ -42,7 +42,6 @@ chatluna-fact-check:
 ### 2) `deep_search` 迭代来源
 
 - `deepSearch.useChatlunaSearchTool`：调用 `web_search`
-- `deepSearch.useSearXNG`：调用 SearXNG
 - `deepSearch.searchUseOllama`：调用 Ollama Search
 
 失败行为：
@@ -56,7 +55,6 @@ chatluna-fact-check:
 | key | base url | 说明 |
 |---|---|---|
 | `api.apiKeys` 中 `provider=ollama` 的 `apiKey` | `api.apiKeys` 中 `provider=ollama` 的 `baseUrl` | 统一填写 Ollama 凭据（推荐）；`agent/deepSearch` 同名字段可单独覆盖；key 留空再回退 `OLLAMA_API_KEY` |
-| `N/A` | `api.apiKeys` 中 `provider=searxng` 的 `baseUrl` | 统一 SearXNG Base URL（推荐）；`deepSearch.searXNGApiBase` 可单独覆盖；需保证 `/search?format=json` 返回 200 |
 | `N/A`（`tof.enableChatlunaSearch`） | `N/A` | 依赖 `chatluna-search-service` 内部配置，不在本插件配置 API key |
 
 ## DeepSearch（可选）
@@ -71,17 +69,10 @@ chatluna-fact-check:
     maxIterations: 3
     perIterationTimeout: 30000
     useChatlunaSearchTool: true
-    useSearXNG: true
-    searXNGApiBase: http://192.168.110.38:8080
 ```
 
 Docker 注意事项：
-- `searXNGApiBase` / `ollamaSearchApiBase` 必须填写 **Koishi 容器可达地址**
-- 先在 Koishi 容器内自检：
-
-```bash
-docker exec -it koishi sh -lc "curl -i 'http://192.168.110.38:8080/search?q=test&format=json'"
-```
+- `ollamaSearchApiBase` 必须填写 **Koishi 容器可达地址**
 
 ## Tof（可选）
 

@@ -1,8 +1,6 @@
 import type { Config } from '../config'
 
 const DEFAULT_OLLAMA_API_BASE = 'https://ollama.com/api/web_search'
-const DEFAULT_SEARXNG_API_BASE = 'http://127.0.0.1:8080'
-type ApiProvider = 'ollama' | 'searxng'
 
 function pick(...values: Array<string | undefined | null>): string {
   for (const value of values) {
@@ -13,14 +11,13 @@ function pick(...values: Array<string | undefined | null>): string {
 }
 
 function getEnabledApiEntry(
-  config: Config,
-  provider: ApiProvider
+  config: Config
 ): { apiKey: string; baseUrl: string } | null {
   const table = Array.isArray(config.api?.apiKeys) ? config.api.apiKeys : []
   for (const row of table) {
     if (!Array.isArray(row) || row.length < 4) continue
     const [rowProvider, rowKey, rowBase, rowEnabled] = row
-    if (rowProvider !== provider) continue
+    if (rowProvider !== 'ollama') continue
     if (!rowEnabled) continue
     return {
       apiKey: pick(rowKey),
@@ -31,7 +28,7 @@ function getEnabledApiEntry(
 }
 
 export function resolveOllamaApiBase(config: Config, scope: 'agent' | 'deepsearch'): string {
-  const entry = getEnabledApiEntry(config, 'ollama')
+  const entry = getEnabledApiEntry(config)
   if (scope === 'deepsearch') {
     return pick(
       config.deepSearch.ollamaSearchApiBase,
@@ -50,7 +47,7 @@ export function resolveOllamaApiBase(config: Config, scope: 'agent' | 'deepsearc
 }
 
 export function resolveOllamaApiKey(config: Config, scope: 'agent' | 'deepsearch'): string {
-  const entry = getEnabledApiEntry(config, 'ollama')
+  const entry = getEnabledApiEntry(config)
   if (scope === 'deepsearch') {
     return pick(
       config.deepSearch.ollamaSearchApiKey,
@@ -65,15 +62,5 @@ export function resolveOllamaApiKey(config: Config, scope: 'agent' | 'deepsearch
     entry?.apiKey,
     config.api.ollamaSearchApiKey,
     process.env.OLLAMA_API_KEY
-  )
-}
-
-export function resolveSearXNGApiBase(config: Config): string {
-  const entry = getEnabledApiEntry(config, 'searxng')
-  return pick(
-    config.deepSearch.searXNGApiBase,
-    entry?.baseUrl,
-    config.api.searXNGApiBase,
-    DEFAULT_SEARXNG_API_BASE
   )
 }

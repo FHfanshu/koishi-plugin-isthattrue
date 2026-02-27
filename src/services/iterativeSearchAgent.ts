@@ -3,7 +3,6 @@ import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import type { DeepSearchProvider, DeepSearchQuery, SearchResult } from '../types'
 import { OllamaSearchService } from './ollamaSearch'
-import { SearXNGSearchService } from './searxngSearch'
 import { DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
 
 type ToolName = 'web_search' | 'browser'
@@ -15,7 +14,6 @@ type ToolName = 'web_search' | 'browser'
 export class IterativeSearchAgent {
   private logger
   private subSearchAgent: SubSearchAgent
-  private searXNGSearchService: SearXNGSearchService
   private ollamaSearchService: OllamaSearchService
   private emptyEmbeddings: any = null
 
@@ -25,7 +23,6 @@ export class IterativeSearchAgent {
   ) {
     this.logger = ctx.logger('chatluna-fact-check')
     this.subSearchAgent = new SubSearchAgent(ctx, config)
-    this.searXNGSearchService = new SearXNGSearchService(ctx, config)
     this.ollamaSearchService = new OllamaSearchService(ctx, config)
     this.tryLoadEmptyEmbeddings()
   }
@@ -52,16 +49,6 @@ export class IterativeSearchAgent {
         return await this.searchWithOllama(query)
       } catch (error) {
         this.logger.warn(`[IterativeSearch] ollama_search 调用失败，回退模型搜索: ${(error as Error).message}`)
-      }
-    }
-
-    const shouldUseSearXNG = this.config.deepSearch.useSearXNG
-      && (query.useTool === 'searxng' || (!query.useTool && !query.provider))
-    if (shouldUseSearXNG) {
-      try {
-        return await this.searchWithSearXNG(query)
-      } catch (error) {
-        this.logger.warn(`[IterativeSearch] SearXNG 调用失败，回退模型搜索: ${(error as Error).message}`)
       }
     }
 
@@ -326,10 +313,6 @@ ${focus}
       params,
     })
     return this.parseBrowserResult(rawResult, query, targetUrl)
-  }
-
-  private async searchWithSearXNG(query: DeepSearchQuery): Promise<SearchResult> {
-    return this.searXNGSearchService.search(query)
   }
 
   private async searchWithOllama(query: DeepSearchQuery): Promise<SearchResult> {

@@ -162,16 +162,6 @@ export interface DeepSearchConfig {
     useChatlunaSearchTool: boolean;
     /** 允许使用 chatluna-search-service 的 browser 工具 */
     usePuppeteerBrowser: boolean;
-    /** 是否启用 SearXNG 作为额外搜索源 */
-    useSearXNG: boolean;
-    /** SearXNG API 基础地址 */
-    searXNGApiBase: string;
-    /** SearXNG engines 参数（逗号分隔） */
-    searXNGEngines: string;
-    /** SearXNG categories 参数（逗号分隔） */
-    searXNGCategories: string;
-    /** SearXNG 返回结果数 */
-    searXNGNumResults: number;
 }
 /**
  * API Key / Base URL 统一配置
@@ -184,8 +174,6 @@ export interface ApiConfig {
     ollamaSearchApiBase: string;
     /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
     ollamaSearchApiKey: string;
-    /** 统一 SearXNG Base URL（可被 deepSearch.searXNGApiBase 覆盖） */
-    searXNGApiBase: string;
 }
 /**
  * 插件配置 Schema
