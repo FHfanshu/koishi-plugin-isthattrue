@@ -27,6 +27,8 @@ export const usage = `
     - \`{"action":"status","taskId":"..."}\`
     - \`{"action":"result","taskId":"..."}\`
 
+---
+
 ### 异步模式（推荐开启）
 
 \`agent.asyncMode = true\`（默认）时，\`fact_check\` 和 \`deep_search\` 工具会：
@@ -37,6 +39,8 @@ export const usage = `
 这样可以 **规避 chatluna-character 的 180 秒锁超时**。  
 如果 session 不可用（非 chatluna-character 调用），会自动回退到同步模式。
 
+---
+
 ### 快速上手
 
 1. 在控制台打开本插件配置页，进入 **Ollama 配置**。  
@@ -44,6 +48,8 @@ export const usage = `
 3. 在 **FactCheck 基础** 中确认 \`agent.enable=true\`、\`agent.enableQuickTool=true\`，工具名保持 \`fact_check\`。  
 4. 在 **FactCheck 运行配置** 中确认代理模式与调试选项。  
 5. 首次使用建议先关闭 \`deepSearch.enable\`，先验证 \`fact_check\` 能稳定返回结果；需要迭代深搜时再开启。  
+
+---
 
 ### 关键配置
 
@@ -53,6 +59,8 @@ export const usage = `
 - \`agent.asyncMode\`：异步模式开关（默认开启，规避锁超时）
 - \`agent.appendChatlunaSearchContext\` / \`agent.appendOllamaSearchContext\`：给 \`fact_check\` 追加上下文（仅补充，不改判定）
 - \`deepSearch.enable\`：启用 \`deep_search\`
+
+---
 
 ### Gemini 搜索模型要求
 

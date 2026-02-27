@@ -366,6 +366,7 @@ ${sourceText}`
     )
       .then(async (result) => {
         const summaryModel = this.config.agent.asyncResultSummaryModel?.trim()
+        let summaryContent: string | null = null
         if (summaryModel) {
           try {
             const chatluna = new ChatlunaAdapter(this.ctx, this.config)
@@ -378,10 +379,13 @@ ${sourceText}`
               30000,
               'AsyncResultSummary'
             )
-            return session.send(summary.content)
+            summaryContent = summary.content
           } catch (summaryErr) {
             this.logger.warn('[ChatlunaTool] 异步结果汇总失败，回退到原始结果:', (summaryErr as Error).message)
           }
+        }
+        if (summaryContent) {
+          return session.send(summaryContent)
         }
         return session.send(`[FactCheck 异步结果]\n${result}`)
       })
