@@ -3,6 +3,8 @@ import { Config } from '../config'
 import type { SearchResult } from '../types'
 import { resolveProxyAgent } from '../utils/http'
 import { resolveOllamaApiBase, resolveOllamaApiKey } from '../utils/apiConfig'
+import { truncate } from '../utils/text'
+import { normalizeUrl } from '../utils/url'
 
 interface OllamaSearchItem {
   title?: string
@@ -47,7 +49,7 @@ export class OllamaSearchService {
     }
 
     const settings = this.getSettings(scope)
-    const proxyAgent = resolveProxyAgent(this.config.tof)
+    const proxyAgent = resolveProxyAgent(this.config.factCheck)
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
@@ -80,13 +82,13 @@ export class OllamaSearchService {
     }
 
     const lines = items.map((item, index) => {
-      const title = this.truncate(item.title || '未知标题', 120)
-      const content = this.truncate(item.content || item.snippet || '', 240)
-      const url = this.normalizeUrl(item.url || '')
+      const title = truncate(item.title || '未知标题', 120)
+      const content = truncate(item.content || item.snippet || '', 240)
+      const url = normalizeUrl(item.url || '')
       return `[${index + 1}] ${title}\n来源: ${url || '未知'}\n摘要: ${content || '无'}`
     })
 
-    const sources = [...new Set(items.map(item => this.normalizeUrl(item.url || '')).filter(Boolean))]
+    const sources = [...new Set(items.map(item => normalizeUrl(item.url || '')).filter(Boolean))]
 
     return {
       agentId: 'ollama-search',
@@ -127,24 +129,5 @@ export class OllamaSearchService {
     if (Array.isArray(response.data)) return response.data
     if (Array.isArray(response.items)) return response.items
     return []
-  }
-
-  private normalizeUrl(url: string): string {
-    const trimmed = (url || '').trim()
-    if (!trimmed) return ''
-    try {
-      const parsed = new URL(trimmed)
-      parsed.hash = ''
-      const normalized = parsed.toString()
-      return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
-    } catch {
-      return trimmed
-    }
-  }
-
-  private truncate(text: string, maxChars: number): string {
-    const normalized = (text || '').replace(/\s+/g, ' ').trim()
-    if (!normalized) return ''
-    return normalized.length > maxChars ? `${normalized.substring(0, maxChars)}...` : normalized
   }
 }

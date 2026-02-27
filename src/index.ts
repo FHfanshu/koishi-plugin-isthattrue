@@ -1,28 +1,13 @@
-import { Context, h } from 'koishi'
+import { Context } from 'koishi'
 import path from 'node:path'
 import { Config } from './config'
-import { MainAgent } from './agents'
-import { MessageParser } from './services/messageParser'
-import { ChatlunaAdapter } from './services/chatluna'
 import { registerFactCheckTool } from './services/factCheckTool'
 import { registerDeepSearchTool } from './services/deepSearchTool'
-import { formatVerificationOutput, formatForwardMessages } from './utils/prompts'
-import { injectCensorshipBypass } from './utils/url'
-import { Verdict } from './types'
 
 export const name = 'chatluna-fact-check'
 export const inject = {
   required: ['chatluna'],
   optional: ['console'],
-}
-
-export const inject2 = {
-  chatluna: {
-    required: true,
-  },
-  console: {
-    required: false,
-  },
 }
 
 export const usage = `
@@ -36,37 +21,47 @@ export const usage = `
     - \`{"action":"status","taskId":"..."}\`
     - \`{"action":"result","taskId":"..."}\`
 
+### 异步模式（推荐开启）
+
+\`agent.asyncMode = true\`（默认）时，\`fact_check\` 和 \`deep_search\` 工具会：
+1. **立即返回** "任务已在后台启动" 提示，不阻塞 LLM 对话
+2. **后台执行** 搜索/核查流程
+3. **完成后自动推送** 结果到当前会话
+
+这样可以 **规避 chatluna-character 的 180 秒锁超时**。  
+如果 session 不可用（非 chatluna-character 调用），会自动回退到同步模式。
+
 ### 快速上手
 
-1. 在控制台打开本插件配置页，先进入 **API Key / Base URL 对照表**。  
-2. 在 \`api.apiKeys\` 表格中添加来源（如 Ollama），填写对应 key 和地址，并启用。  
+1. 在控制台打开本插件配置页，进入 **Ollama 配置**。  
+2. 填写 \`api.ollamaApiKey\`（从 ollama.com 获取），其余留默认即可。  
 3. 在 **FactCheck 基础** 中确认 \`agent.enable=true\`、\`agent.enableQuickTool=true\`，工具名保持 \`fact_check\`。  
-4. 首次使用建议先关闭 \`deepSearch.enable\`，先验证 \`fact_check\` 能稳定返回结果。  
-5. 需要迭代深搜时再开启 \`deepSearch.enable\`。  
+4. 在 **FactCheck 运行配置** 中确认代理模式与调试选项。  
+5. 首次使用建议先关闭 \`deepSearch.enable\`，先验证 \`fact_check\` 能稳定返回结果；需要迭代深搜时再开启。  
 
 ### 关键配置
 
-- \`api.apiKeys\`：统一管理 API Key / Base URL
+- \`api.ollamaApiKey\`：Ollama API Key（唯一必填项）
+- \`api.ollamaBaseUrl\`：Ollama Base URL（留空使用默认地址）
+- \`factCheck\`：核查模型、搜索模型、超时、重试、代理与调试
+- \`agent.asyncMode\`：异步模式开关（默认开启，规避锁超时）
 - \`agent.appendChatlunaSearchContext\` / \`agent.appendOllamaSearchContext\`：给 \`fact_check\` 追加上下文（仅补充，不改判定）
 - \`deepSearch.enable\`：启用 \`deep_search\`
-- \`tof\` 为可选命令入口（\`tof\` / \`tof.quick\`）
 
 ### 排障提示
 
 - Docker 场景下，Base URL 必须是 **Koishi 容器可达地址**
-- \`fact_check_deep\` 为 legacy 工具，默认关闭
+- 遇到 \`Lock timeout after 180000ms\` 错误时，确认 \`agent.asyncMode=true\`
 `
 
 export { Config } from './config'
-const import_meta = {} as { url?: string }
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger('chatluna-fact-check')
-  const messageParser = new MessageParser(ctx, {
-    imageTimeoutMs: Math.min(config.tof.timeout, 30000),
-    maxImageBytes: 8 * 1024 * 1024,
-    tofConfig: config.tof,
-  })
+  if (!config || typeof config !== 'object') {
+    logger.error('插件配置为空或无效，已跳过加载。请在 koishi.yml 中检查 chatluna-fact-check 配置。')
+    return
+  }
 
   // 注册 Chatluna 工具
   registerFactCheckTool(ctx, config)
@@ -76,207 +71,16 @@ export function apply(ctx: Context, config: Config) {
   ctx.inject(['console'], (innerCtx) => {
     const consoleService = (innerCtx as any).console
     const packageBase = path.resolve(ctx.baseDir, 'node_modules/koishi-plugin-chatluna-fact-check')
-    const browserEntry = import_meta.url
-      ? import_meta.url.replace(/\/src\/[^/]+$/, '/client/index.ts')
-      : path.resolve(__dirname, '../client/index.ts')
     const entry = process.env.KOISHI_BASE
       ? [process.env.KOISHI_BASE + '/dist/index.js']
       : process.env.KOISHI_ENV === 'browser'
-        ? [browserEntry]
+        ? [path.resolve(__dirname, '../client/index.ts')]
         : {
-          dev: path.resolve(packageBase, 'client/index.ts'),
-          prod: path.resolve(packageBase, 'dist'),
-        }
+            dev: path.resolve(packageBase, 'client/index.ts'),
+            prod: path.resolve(packageBase, 'dist'),
+          }
     consoleService?.addEntry?.(entry)
   })
-
-  // 注册 tof 指令
-  ctx.command('tof', '验证消息的真实性')
-    .alias('真假')
-    .alias('事实核查')
-    .alias('factcheck')
-    .option('verbose', '-v 显示详细过程')
-    .action(async ({ session, options }) => {
-      logger.info('tof 命令被触发')
-      if (!session) {
-        logger.warn('session 为空')
-        return '无法获取会话信息'
-      }
-      logger.info(`用户 ${session.userId} 在 ${session.channelId} 触发 tof 命令`)
-      logger.debug('Session elements:', JSON.stringify(session.elements))
-
-      const verbose = options?.verbose ?? config.tof.verbose
-      const format = config.tof.outputFormat === 'auto'
-        ? (session.platform === 'qq' ? 'plain' : 'markdown')
-        : config.tof.outputFormat
-
-      // 1. 检查 Chatluna 服务
-      const chatluna = new ChatlunaAdapter(ctx, config)
-      if (!chatluna.isAvailable()) {
-        return '❌ Chatluna 服务不可用，请确保已安装并启用 koishi-plugin-chatluna'
-      }
-
-      // 2. 解析消息内容 (优先引用，其次是当前消息)
-      const content = await messageParser.parseSession(session)
-      if (!content || (!content.text && content.images.length === 0)) {
-        return '❌ 请提供需要验证的内容\n\n使用方法:\n1. 引用一条消息后发送 tof\n2. 直接发送 tof [文本或图片]'
-      }
-
-      // 3. 发送处理中提示
-      if (verbose) {
-        await session.send('🔍 正在验证消息真实性，请稍候...')
-      }
-
-      try {
-        // 4. 发送图片处理提示
-        if (content.images.length > 0 && verbose) {
-          await session.send('📷 正在处理图片内容...')
-        }
-
-        // 5. 执行验证 (使用主控 Agent，内部处理图片)
-        const mainAgent = new MainAgent(ctx, config)
-        const result = await mainAgent.verify(content)
-
-        // 用于输出的文本（优先使用原始文本，纯图片时显示"图片内容"）
-        const textToDisplay = content.text.trim() || '[图片内容]'
-
-        // 6. 格式化并发送输出
-        const searchResultsForOutput = result.searchResults.map(r => ({
-          agentId: r.agentId,
-          perspective: r.perspective,
-          findings: injectCensorshipBypass(r.findings),
-        }))
-
-        // 检查是否使用合并转发（仅支持 OneBot 协议）
-        const useForward = config.tof.useForwardMessage && session.platform === 'onebot'
-
-        if (useForward) {
-          // 使用合并转发消息
-          const { summary, details } = formatForwardMessages(
-            textToDisplay,
-            searchResultsForOutput,
-            result.verdict,
-            result.reasoning,
-            result.sources,
-            result.confidence,
-            result.processingTime,
-            config.tof.forwardMaxSegmentChars
-          )
-
-          const maxNodes = config.tof.forwardMaxNodes ?? 8
-          const maxTotalChars = config.tof.forwardMaxTotalChars ?? 3000
-          const totalChars = details.reduce((sum, detail) => sum + detail.length, 0)
-
-          if (maxNodes <= 0 || maxTotalChars <= 0 || details.length > maxNodes || totalChars > maxTotalChars) {
-            logger.warn(`合并转发内容过长，回退普通消息: nodes=${details.length}/${maxNodes}, chars=${totalChars}/${maxTotalChars}`)
-            const output = formatVerificationOutput(
-              textToDisplay,
-              searchResultsForOutput,
-              result.verdict,
-              result.reasoning,
-              result.sources,
-              result.confidence,
-              result.processingTime,
-              format as 'markdown' | 'plain'
-            )
-            return output
-          }
-
-          // 构建转发消息节点
-          const forwardNodes = details.map(detail =>
-            h('message', { nickname: '事实核查', userId: session.selfId }, detail)
-          )
-
-          // 发送主消息
-          let summarySent = false
-          try {
-            await session.send(summary)
-            summarySent = true
-          } catch (sendSummaryError) {
-            logger.warn('发送摘要失败，将尝试回退由 Koishi 发送:', sendSummaryError)
-          }
-
-          // 尝试发送合并转发，失败则回退到普通消息
-          try {
-            await session.send(h('message', { forward: true }, forwardNodes))
-          } catch (forwardError) {
-            logger.warn('合并转发发送失败，回退到普通消息:', forwardError)
-            // 回退：逐条发送详情
-            for (const detail of details) {
-              try {
-                await session.send(detail)
-              } catch (detailError) {
-                logger.warn('回退详情发送失败，已忽略:', detailError)
-              }
-            }
-            if (!summarySent) {
-              return summary
-            }
-          }
-          return
-        }
-
-        // 普通输出
-        const output = formatVerificationOutput(
-          textToDisplay,
-          searchResultsForOutput,
-          result.verdict,
-          result.reasoning,
-          result.sources,
-          result.confidence,
-          result.processingTime,
-          format as 'markdown' | 'plain'
-        )
-
-        return output
-
-      } catch (error) {
-        logger.error('验证过程出错:', error)
-        return `❌ 验证过程发生错误: ${(error as Error).message}`
-      }
-    })
-
-  // 注册快速验证指令（简化输出）
-  ctx.command('tof.quick <text:text>', '快速验证文本真实性')
-    .action(async ({ session }, text) => {
-      if (!session) return '无法获取会话信息'
-      if (!text?.trim()) return '请提供需要验证的文本'
-
-      const format = config.tof.outputFormat === 'auto'
-        ? (session.platform === 'qq' ? 'plain' : 'markdown')
-        : config.tof.outputFormat
-
-      const chatluna = new ChatlunaAdapter(ctx, config)
-      if (!chatluna.isAvailable()) {
-        return '❌ Chatluna 服务不可用'
-      }
-
-      await session.send('🔍 快速验证中...')
-
-      try {
-        const mainAgent = new MainAgent(ctx, config)
-        const result = await mainAgent.verify({ text, images: [], hasQuote: false })
-
-        const verdictEmoji: Record<string, string> = {
-          [Verdict.TRUE]: '✅ 真实',
-          [Verdict.FALSE]: '❌ 虚假',
-          [Verdict.PARTIALLY_TRUE]: '⚠️ 部分真实',
-          [Verdict.UNCERTAIN]: '❓ 无法确定',
-        }
-
-        const confidenceValue = Math.round(result.confidence * 100)
-        const reasoning = result.reasoning.substring(0, 200)
-
-        if (format === 'plain') {
-          return `${verdictEmoji[result.verdict]} (${confidenceValue}%)\n${reasoning}`
-        }
-
-        return `**${verdictEmoji[result.verdict]}** (${confidenceValue}%)\n\n${reasoning}`
-
-      } catch (error) {
-        return `❌ 验证失败: ${(error as Error).message}`
-      }
-    })
 
   logger.info('chatluna-fact-check 插件已加载')
 }

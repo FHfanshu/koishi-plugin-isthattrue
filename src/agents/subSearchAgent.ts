@@ -31,7 +31,7 @@ export class SubSearchAgent {
   async deepSearch(claim: string): Promise<SearchResult> {
     return this.deepSearchWithModel(
       claim,
-      this.config.tof.searchModel,
+      this.config.agent.grokModel || 'x-ai/grok-4-1',
       'grok-deep-search',
       'Grok 深度搜索 (X/Twitter)'
     )
@@ -55,7 +55,7 @@ export class SubSearchAgent {
           systemPrompt: systemPromptOverride || DEEP_SEARCH_AGENT_SYSTEM_PROMPT,
           enableSearch: true,
         },
-        this.config.tof.maxRetries
+        this.config.factCheck.maxRetries
       )
 
       // 解析响应

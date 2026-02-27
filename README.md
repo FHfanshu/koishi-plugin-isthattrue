@@ -12,21 +12,48 @@
 npm install koishi-plugin-chatluna-fact-check
 ```
 
-## FactCheck 基础
-
-建议新用户先启用 `fact_check`，确认流程通畅后再启用 `deep_search`。
-
-最小配置：
+## 最小配置
 
 ```yaml
 chatluna-fact-check:
+  api:
+    apiKeys:
+      - [ollama, '', 'https://ollama.com/api/web_search', true]
+  factCheck:
+    enableChatlunaSearch: false
+    chatlunaSearchModel: ''
+    chatlunaSearchDiversifyModel: ''
+    timeout: 60000
+    maxRetries: 2
+    proxyMode: follow-global
+    proxyAddress: ''
+    logLLMDetails: false
   agent:
     enable: true
     enableQuickTool: true
     quickToolName: fact_check
+    grokModel: x-ai/grok-4-1
   deepSearch:
     enable: false
 ```
+
+## API Key / Base URL 对照表
+
+推荐优先在 `api.apiKeys` 表格中集中填写（来源 / key / base url / 启用开关）。
+
+| key | base url | 说明 |
+|---|---|---|
+| `api.apiKeys` 中 `provider=ollama` 的 `apiKey` | `api.apiKeys` 中 `provider=ollama` 的 `baseUrl` | 统一填写 Ollama 凭据（唯一入口）；key 留空再回退 `OLLAMA_API_KEY` |
+| `N/A`（`factCheck.enableChatlunaSearch`） | `N/A` | 依赖 `chatluna-search-service` 内部配置，不在本插件配置 API key |
+
+## FactCheck 配置
+
+`factCheck` 负责核查流程的运行参数：
+- Chatluna 搜索模型：`factCheck.chatlunaSearchModel`
+- 搜索关键词多样化：`factCheck.chatlunaSearchDiversifyModel`
+- 搜索集成开关：`factCheck.enableChatlunaSearch`
+- 超时与重试：`factCheck.timeout` / `factCheck.maxRetries`
+- 代理与调试：`factCheck.proxyMode` / `factCheck.proxyAddress` / `factCheck.logLLMDetails`
 
 ## 搜索源上下文注入
 
@@ -42,20 +69,11 @@ chatluna-fact-check:
 ### 2) `deep_search` 迭代来源
 
 - `deepSearch.useChatlunaSearchTool`：调用 `web_search`
-- `deepSearch.searchUseOllama`：调用 Ollama Search
+- `api.apiKeys` 中启用 `ollama` 行：允许 DeepSearch 调用 Ollama Search
 
 失败行为：
 - 工具调用失败时回退到模型搜索
 - 若来源整体不可用，最终报告会降置信度并提示来源不足
-
-## API Key / Base URL 对照表
-
-推荐优先在 `api.apiKeys` 表格中集中填写（来源 / key / base url / 启用开关）。
-
-| key | base url | 说明 |
-|---|---|---|
-| `api.apiKeys` 中 `provider=ollama` 的 `apiKey` | `api.apiKeys` 中 `provider=ollama` 的 `baseUrl` | 统一填写 Ollama 凭据（推荐）；`agent/deepSearch` 同名字段可单独覆盖；key 留空再回退 `OLLAMA_API_KEY` |
-| `N/A`（`tof.enableChatlunaSearch`） | `N/A` | 依赖 `chatluna-search-service` 内部配置，不在本插件配置 API key |
 
 ## DeepSearch（可选）
 
@@ -71,26 +89,10 @@ chatluna-fact-check:
     useChatlunaSearchTool: true
 ```
 
-Docker 注意事项：
-- `ollamaSearchApiBase` 必须填写 **Koishi 容器可达地址**
-
-## Tof（可选）
-
-命令模式：
-
-```text
-tof
-tof -v
-tof.quick 这里输入待核查文本
-```
-
-如果你主要通过 Chatluna Agent/Character 调工具，可将 Tof 视为次要入口。
-
 ## 调试与排障
 
-- `tof.proxyMode`：排障建议先设为 `direct`
-- `tof.logLLMDetails`：仅排障时打开
-- `fact_check_deep`：legacy 工具，默认关闭，建议由 `deep_search` 替代
+- `factCheck.proxyMode`：排障建议先设为 `direct`
+- `factCheck.logLLMDetails`：仅排障时打开
 
 ## License
 

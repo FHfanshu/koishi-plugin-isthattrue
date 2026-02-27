@@ -13,7 +13,5 @@ export declare class OllamaSearchService {
     search(query: string, perspective?: string, scope?: OllamaScope): Promise<SearchResult>;
     private getSettings;
     private normalizeItems;
-    private normalizeUrl;
-    private truncate;
 }
 export {};

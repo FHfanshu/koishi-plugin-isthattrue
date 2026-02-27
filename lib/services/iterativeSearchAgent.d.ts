@@ -19,10 +19,6 @@ export declare class IterativeSearchAgent {
     private getToolInfo;
     private createTool;
     private invokeTool;
-    private normalizeResultItems;
-    private normalizeUrl;
-    private extractUrls;
-    private truncate;
     private parseWebSearchResult;
     private parseBrowserResult;
     private buildModelPrompt;

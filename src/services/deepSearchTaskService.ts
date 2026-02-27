@@ -4,6 +4,7 @@ import type { DeepSearchReport } from '../types'
 import { DeepSearchController } from '../agents/deepSearchController'
 import { ChatlunaAdapter } from './chatluna'
 import { randomUUID } from 'node:crypto'
+import { withTimeout } from '../utils/async'
 
 export type DeepSearchTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'expired'
 
@@ -110,7 +111,7 @@ export class DeepSearchTaskService {
         new ChatlunaAdapter(this.ctx, this.config)
       )
       const hardTimeoutMs = this.getTaskTimeoutMs()
-      const report = await this.withTimeout(
+      const report = await withTimeout(
         controller.search(task.claim),
         hardTimeoutMs,
         `DeepSearchTask(${task.taskId})`
@@ -174,19 +175,5 @@ export class DeepSearchTaskService {
     const perIterationTimeout = Math.max(5000, this.config.deepSearch.perIterationTimeout || 30000)
     const computed = iterationCount * perIterationTimeout + 10_000
     return Math.max(15_000, Math.min(computed, DeepSearchTaskService.HARD_TIMEOUT_MS))
-  }
-
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-    let timer: NodeJS.Timeout | null = null
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label} 超时`)), timeoutMs)
-        }),
-      ])
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
   }
 }

@@ -30,5 +30,4 @@ export declare class DeepSearchController {
     private estimateConfidence;
     private clampConfidence;
     private parseJson;
-    private withTimeout;
 }

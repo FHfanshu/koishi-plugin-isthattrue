@@ -18,10 +18,6 @@ export declare class ChatlunaSearchAgent {
     private emptyEmbeddings;
     private chatluna;
     constructor(ctx: Context, config: Config);
-    private normalizeResultItems;
-    private normalizeUrl;
-    private truncate;
-    private withTimeout;
     private refreshToolInfo;
     private initTool;
     /**

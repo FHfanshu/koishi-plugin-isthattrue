@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-chatluna-fact-check",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "事实核查插件 - 使用多Agent LLM验证消息真实性",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -35,14 +35,14 @@
     "@koishijs/plugin-console": {
       "optional": true
     },
+    "koishi-plugin-chatluna": {
+      "optional": false
+    },
     "koishi-plugin-chatluna-search-service": {
       "optional": true
     },
     "koishi-plugin-puppeteer": {
       "optional": true
-    },
-    "koishi-plugin-chatluna": {
-      "optional": false
     }
   },
   "dependencies": {

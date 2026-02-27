@@ -2,6 +2,10 @@ import { Context } from 'koishi'
 import { Config } from '../config'
 import { SearchResult } from '../types'
 import { ChatlunaAdapter } from './chatluna'
+import { withTimeout } from '../utils/async'
+import { truncate } from '../utils/text'
+import { normalizeUrl } from '../utils/url'
+import { normalizeResultItems } from '../utils/search'
 
 const MAX_RESULTS_PER_QUERY = 8
 const MAX_TOTAL_RESULTS = 24
@@ -30,67 +34,6 @@ export class ChatlunaSearchAgent {
     this.logger = ctx.logger('chatluna-fact-check')
     this.chatluna = new ChatlunaAdapter(ctx, config)
     this.toolInitPromise = this.initTool()
-  }
-
-  private normalizeResultItems(searchResult: any): any[] {
-    if (!searchResult) return []
-
-    if (Array.isArray(searchResult)) {
-      return searchResult
-    }
-
-    if (typeof searchResult === 'string') {
-      try {
-        const parsed = JSON.parse(searchResult)
-        return this.normalizeResultItems(parsed)
-      } catch {
-        return [{ description: searchResult }]
-      }
-    }
-
-    if (typeof searchResult === 'object') {
-      if (Array.isArray(searchResult.results)) return searchResult.results
-      if (Array.isArray(searchResult.items)) return searchResult.items
-      if (Array.isArray(searchResult.data)) return searchResult.data
-      if (searchResult.url || searchResult.title || searchResult.description || searchResult.content) {
-        return [searchResult]
-      }
-    }
-
-    return []
-  }
-
-  private normalizeUrl(url: string): string {
-    try {
-      const u = new URL(url)
-      u.hash = ''
-      let normalized = u.toString()
-      if (normalized.endsWith('/')) {
-        normalized = normalized.slice(0, -1)
-      }
-      return normalized
-    } catch {
-      return (url || '').trim()
-    }
-  }
-
-  private truncate(text: string, maxLength: number): string {
-    if (!text) return ''
-    return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
-  }
-
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-    let timer: NodeJS.Timeout | null = null
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label} 超时`)), timeoutMs)
-        }),
-      ])
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
   }
 
   private async refreshToolInfo(): Promise<boolean> {
@@ -175,10 +118,8 @@ export class ChatlunaSearchAgent {
    * 检查服务是否可用
    */
   isAvailable(): boolean {
-    const enabled = this.config.tof.enableChatlunaSearch !== false
-    const hasModel = !!this.config.tof.chatlunaSearchModel
     const hasChatluna = !!(this.ctx as any).chatluna?.platform
-    return enabled && hasModel && hasChatluna
+    return hasChatluna
   }
 
   /**
@@ -186,38 +127,6 @@ export class ChatlunaSearchAgent {
    * 使用小模型生成多个不同角度的搜索关键词
    */
   private async diversifyQuery(query: string): Promise<string[]> {
-    const diversifyModel = this.config.tof.chatlunaSearchDiversifyModel
-    if (!diversifyModel) {
-      return [query]
-    }
-
-    try {
-      this.logger.info('[ChatlunaSearch] 使用小模型多样化搜索关键词...')
-      const response = await this.chatluna.chatWithRetry({
-        model: diversifyModel,
-        systemPrompt: `你是一个搜索关键词优化专家。给定一个声明或问题，生成3个不同角度的搜索关键词，用于事实核查。
-
-要求：
-1. 关键词应该简洁有效，适合搜索引擎
-2. 从不同角度切入：如正面验证、反面查证、相关背景
-3. 每个关键词单独一行
-4. 只输出关键词，不要编号或其他说明`,
-        message: `请为以下内容生成3个多样化的搜索关键词：\n\n${query}`,
-      }, this.config.tof.maxRetries)
-
-      const keywords = response.content
-        .split('\n')
-        .map(k => k.trim())
-        .filter(k => k.length > 0 && k.length < 100)
-
-      if (keywords.length > 0) {
-        this.logger.info(`[ChatlunaSearch] 生成了 ${keywords.length} 个多样化关键词: ${keywords.join(' | ')}`)
-        return keywords.slice(0, 3)
-      }
-    } catch (error) {
-      this.logger.warn('[ChatlunaSearch] 关键词多样化失败，使用原始查询:', error)
-    }
-
     return [query]
   }
 
@@ -226,9 +135,12 @@ export class ChatlunaSearchAgent {
    */
   async search(query: string): Promise<SearchResult> {
     const startTime = Date.now()
-    const modelName = this.config.tof.chatlunaSearchModel
+    const modelName = this.config.deepSearch.controllerModel?.trim()
+      || this.config.agent.geminiModel?.trim()
+      || this.config.agent.grokModel?.trim()
+      || 'unknown'
     const shortModelName = modelName.includes('/') ? modelName.split('/').pop()! : modelName
-    const perQueryTimeout = Math.max(3000, Math.min(this.config.tof.timeout || 60000, 120000))
+    const perQueryTimeout = Math.max(3000, Math.min(this.config.factCheck.timeout || 60000, 120000))
     this.logger.info(`[ChatlunaSearch] 开始搜索，模型: ${modelName}`)
 
     try {
@@ -256,7 +168,7 @@ export class ChatlunaSearchAgent {
 
       // 并行执行所有关键词搜索
       const searchPromises = queries.map(async (q) => {
-        return this.withTimeout((async () => {
+        return withTimeout((async () => {
           const searchTool = this.createSearchTool()
           if (!searchTool) {
             this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 创建搜索工具失败`)
@@ -275,7 +187,7 @@ export class ChatlunaSearchAgent {
               throw new Error('搜索工具没有可用的调用方法')
             }
 
-            const searchData = this.normalizeResultItems(searchResult)
+            const searchData = normalizeResultItems(searchResult)
               .slice(0, MAX_RESULTS_PER_QUERY)
 
             return searchData.map(item => ({ ...item, searchQuery: q }))
@@ -294,7 +206,7 @@ export class ChatlunaSearchAgent {
               } else {
                 throw new Error('重建后的搜索工具没有可用调用方法')
               }
-              const retryData = this.normalizeResultItems(retryResult)
+              const retryData = normalizeResultItems(retryResult)
                 .slice(0, MAX_RESULTS_PER_QUERY)
               return retryData.map(item => ({ ...item, searchQuery: q }))
             } catch (retryErr) {
@@ -326,7 +238,7 @@ export class ChatlunaSearchAgent {
       const dedupedSearchData: any[] = []
       const seenKeys = new Set<string>()
       for (const item of allSearchData) {
-        const url = this.normalizeUrl(item?.url || '')
+        const url = normalizeUrl(item?.url || '')
         const key = url || `${item?.title || ''}|${item?.description || item?.content || ''}`
         if (!key || seenKeys.has(key)) continue
         seenKeys.add(key)
@@ -336,7 +248,7 @@ export class ChatlunaSearchAgent {
       const finalSearchData = dedupedSearchData.slice(0, MAX_TOTAL_RESULTS)
       const allSources = [...new Set(
         finalSearchData
-          .map(item => this.normalizeUrl(item?.url || ''))
+          .map(item => normalizeUrl(item?.url || ''))
           .filter(Boolean)
       )]
 
@@ -349,7 +261,7 @@ export class ChatlunaSearchAgent {
       // 格式化搜索结果（保留必要信息并限制长度）
       const formattedResults = finalSearchData.length > 0
         ? finalSearchData.map((item, i) =>
-            `[${i + 1}] ${this.truncate(item.title || '未知标题', 120)}\n来源: ${item.url || '未知'}\n${this.truncate(item.description || item.content || '', MAX_DESC_LENGTH)}`
+            `[${i + 1}] ${truncate(item.title || '未知标题', 120)}\n来源: ${item.url || '未知'}\n${truncate(item.description || item.content || '', MAX_DESC_LENGTH)}`
           ).join('\n\n---\n\n')
         : '未找到搜索结果'
 

@@ -1,15 +1,13 @@
 import { Context, h } from 'koishi'
 import { MessageContent } from '../types'
 import { resolveProxyAgent } from '../utils/http'
-import type { TofConfig } from '../config'
+import type { FactCheckConfig } from '../config'
 
 interface MessageParserOptions {
   imageTimeoutMs?: number
   maxImageBytes?: number
-  tofConfig?: TofConfig
+  factCheckConfig?: FactCheckConfig
 }
-
-const COMMAND_ALIASES = new Set(['tof', '真假', '事实核查', 'factcheck'])
 
 /**
  * 消息解析服务
@@ -18,7 +16,7 @@ const COMMAND_ALIASES = new Set(['tof', '真假', '事实核查', 'factcheck'])
 export class MessageParser {
   private imageTimeoutMs: number
   private maxImageBytes: number
-  private tofConfig?: TofConfig
+  private factCheckConfig?: FactCheckConfig
 
   constructor(
     private ctx: Context,
@@ -26,14 +24,7 @@ export class MessageParser {
   ) {
     this.imageTimeoutMs = options.imageTimeoutMs ?? 15000
     this.maxImageBytes = options.maxImageBytes ?? 8 * 1024 * 1024
-    this.tofConfig = options.tofConfig
-  }
-
-  private stripLeadingCommand(content: string): string {
-    const trimmed = content.trimStart()
-    const firstToken = trimmed.split(/\s+/, 1)[0]?.toLowerCase() || ''
-    if (!COMMAND_ALIASES.has(firstToken)) return content
-    return trimmed.slice(firstToken.length).trimStart()
+    this.factCheckConfig = options.factCheckConfig
   }
 
   /**
@@ -109,12 +100,7 @@ export class MessageParser {
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i]
       if (element.type === 'text') {
-        let content = element.attrs?.content || ''
-        // 仅在第一个文本元素命中已知指令时，移除指令词
-        if (i === 0) {
-          content = this.stripLeadingCommand(content)
-        }
-        currentText += content
+        currentText += element.attrs?.content || ''
       } else if (element.type === 'img' || element.type === 'image') {
         const src = element.attrs?.src || element.attrs?.url
         if (src && !result.images.includes(src)) {
@@ -196,7 +182,7 @@ export class MessageParser {
       }
 
       // 下载远程图片
-      const proxyAgent = this.tofConfig ? resolveProxyAgent(this.tofConfig) : undefined
+      const proxyAgent = this.factCheckConfig ? resolveProxyAgent(this.factCheckConfig) : undefined
       const response = await this.ctx.http.get(url, {
         responseType: 'arraybuffer',
         timeout: this.imageTimeoutMs,

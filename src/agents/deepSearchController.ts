@@ -18,6 +18,7 @@ import {
   buildDeepSearchPlanPrompt,
   buildDeepSearchSynthesizePrompt,
 } from '../utils/prompts'
+import { withTimeout } from '../utils/async'
 
 const MAX_PLAN_QUERIES = 4
 
@@ -61,7 +62,7 @@ export class DeepSearchController {
       const roundStart = Date.now()
 
       try {
-        const roundData = await this.withTimeout(
+        const roundData = await withTimeout(
           this.runRound(normalizedClaim, history, roundNumber),
           this.config.deepSearch.perIterationTimeout,
           `DeepSearch 第 ${roundNumber} 轮`
@@ -122,7 +123,7 @@ export class DeepSearchController {
         message: buildDeepSearchPlanPrompt(claim, history),
         systemPrompt: DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT,
       },
-      this.config.tof.maxRetries
+      this.config.factCheck.maxRetries
     )
 
     return this.parseSearchPlan(response.content, claim)
@@ -139,7 +140,7 @@ export class DeepSearchController {
         message: buildDeepSearchEvaluatePrompt(claim, results, history),
         systemPrompt: DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT,
       },
-      this.config.tof.maxRetries
+      this.config.factCheck.maxRetries
     )
 
     return this.parseEvaluation(response.content, results)
@@ -155,7 +156,7 @@ export class DeepSearchController {
         message: buildDeepSearchSynthesizePrompt(claim, history),
         systemPrompt: DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT,
       },
-      this.config.tof.maxRetries
+      this.config.factCheck.maxRetries
     )
 
     return this.parseFinalReport(response.content, history)
@@ -407,17 +408,4 @@ export class DeepSearchController {
     }
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-    let timer: NodeJS.Timeout | null = null
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label} 超时`)), timeoutMs)
-        }),
-      ])
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
-  }
 }

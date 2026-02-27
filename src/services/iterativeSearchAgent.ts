@@ -3,7 +3,11 @@ import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import type { DeepSearchProvider, DeepSearchQuery, SearchResult } from '../types'
 import { OllamaSearchService } from './ollamaSearch'
+import { hasEnabledApiProvider } from '../utils/apiConfig'
 import { DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
+import { truncate } from '../utils/text'
+import { normalizeUrl, extractUrls } from '../utils/url'
+import { normalizeResultItems } from '../utils/search'
 
 type ToolName = 'web_search' | 'browser'
 
@@ -44,7 +48,7 @@ export class IterativeSearchAgent {
       }
     }
 
-    if (query.useTool === 'ollama_search' && this.config.deepSearch.searchUseOllama) {
+    if (query.useTool === 'ollama_search' && hasEnabledApiProvider(this.config, 'ollama')) {
       try {
         return await this.searchWithOllama(query)
       } catch (error) {
@@ -108,9 +112,8 @@ export class IterativeSearchAgent {
   private async invokeTool(tool: any, input: any): Promise<any> {
     const runnableConfig = {
       configurable: {
-        model: this.config.tof.chatlunaSearchModel?.trim()
-          || this.config.deepSearch.controllerModel?.trim()
-          || this.config.tof.searchModel,
+        model: this.config.deepSearch.controllerModel?.trim()
+          || this.config.agent.grokModel,
       },
     }
 
@@ -123,73 +126,23 @@ export class IterativeSearchAgent {
     throw new Error('工具没有可用调用方法')
   }
 
-  private normalizeResultItems(searchResult: any): any[] {
-    if (!searchResult) return []
-
-    if (Array.isArray(searchResult)) {
-      return searchResult
-    }
-
-    if (typeof searchResult === 'string') {
-      try {
-        const parsed = JSON.parse(searchResult)
-        return this.normalizeResultItems(parsed)
-      } catch {
-        return [{ description: searchResult }]
-      }
-    }
-
-    if (typeof searchResult === 'object') {
-      if (Array.isArray(searchResult.results)) return searchResult.results
-      if (Array.isArray(searchResult.items)) return searchResult.items
-      if (Array.isArray(searchResult.data)) return searchResult.data
-      if (searchResult.url || searchResult.title || searchResult.description || searchResult.content) {
-        return [searchResult]
-      }
-    }
-
-    return []
-  }
-
-  private normalizeUrl(url: string): string {
-    try {
-      const parsed = new URL(url)
-      parsed.hash = ''
-      const normalized = parsed.toString()
-      return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
-    } catch {
-      return (url || '').trim()
-    }
-  }
-
-  private extractUrls(text: string): string[] {
-    const matches = (text || '').match(/https?:\/\/[^\s\])"']+/g) || []
-    return [...new Set(matches.map(url => this.normalizeUrl(url)).filter(Boolean))]
-  }
-
-  private truncate(text: string, maxChars = 360): string {
-    const normalized = (text || '').replace(/\s+/g, ' ').trim()
-    if (!normalized) return '无'
-    return normalized.length > maxChars ? `${normalized.substring(0, maxChars)}...` : normalized
-  }
-
   private parseWebSearchResult(rawResult: any, query: DeepSearchQuery): SearchResult {
-    const items = this.normalizeResultItems(rawResult)
+    const items = normalizeResultItems(rawResult)
     const rawText = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult)
 
     if (items.length === 0) {
       return {
         agentId: 'deepsearch-web-search',
         perspective: `DeepSearch web_search: ${query.focus}`,
-        findings: this.truncate(rawText, 1200),
-        sources: this.extractUrls(rawText),
+        findings: truncate(rawText, 1200, '无'),
+        sources: extractUrls(rawText),
         confidence: 0.4,
       }
     }
 
     const lines = items.slice(0, 8).map((item, index) => {
-      const title = this.truncate(item?.title || item?.name || '未知标题', 120)
-      const desc = this.truncate(item?.description || item?.content || '', 240)
+      const title = truncate(item?.title || item?.name || '未知标题', 120, '无')
+      const desc = truncate(item?.description || item?.content || '', 240, '无')
       const url = item?.url || item?.link || ''
       return `[${index + 1}] ${title}\n来源: ${url || '未知'}\n摘要: ${desc}`
     })
@@ -197,7 +150,7 @@ export class IterativeSearchAgent {
     const sources = [...new Set(
       items
         .map(item => item?.url || item?.link || '')
-        .map((url: string) => this.normalizeUrl(url))
+        .map((url: string) => normalizeUrl(url))
         .filter(Boolean)
     )]
 
@@ -215,14 +168,14 @@ export class IterativeSearchAgent {
       ? rawResult
       : JSON.stringify(rawResult)
     const sources = [...new Set([
-      this.normalizeUrl(url),
-      ...this.extractUrls(text),
+      normalizeUrl(url),
+      ...extractUrls(text),
     ].filter(Boolean))]
 
     return {
       agentId: 'deepsearch-browser',
       perspective: `DeepSearch browser: ${query.focus}`,
-      findings: this.truncate(text, 1800),
+      findings: truncate(text, 1800, '无'),
       sources,
       confidence: sources.length > 0 ? 0.7 : 0.55,
     }
@@ -246,10 +199,10 @@ ${focus}
 
   private getEnabledProviders(): DeepSearchProvider[] {
     const providers: DeepSearchProvider[] = []
-    if (this.config.deepSearch.searchUseGrok) providers.push('grok')
-    if (this.config.deepSearch.searchUseGemini) providers.push('gemini')
-    if (this.config.deepSearch.searchUseChatgpt) providers.push('chatgpt')
-    if (this.config.deepSearch.searchUseOllama) providers.push('ollama')
+    if (this.config.deepSearch.grokModel?.trim()) providers.push('grok')
+    if (this.config.deepSearch.geminiModel?.trim()) providers.push('gemini')
+    if (this.config.deepSearch.chatgptModel?.trim()) providers.push('chatgpt')
+    if (hasEnabledApiProvider(this.config, 'ollama')) providers.push('ollama')
     return providers
   }
 
@@ -271,24 +224,17 @@ ${focus}
   }
 
   private getModelName(provider: DeepSearchProvider): string {
-    const fallback = this.config.tof.searchModel
     switch (provider) {
       case 'grok':
-        return this.config.deepSearch.grokModel?.trim()
-          || this.config.agent.grokModel?.trim()
-          || fallback
+        return this.config.deepSearch.grokModel?.trim() || ''
       case 'gemini':
-        return this.config.deepSearch.geminiModel?.trim()
-          || this.config.agent.geminiModel?.trim()
-          || fallback
+        return this.config.deepSearch.geminiModel?.trim() || ''
       case 'chatgpt':
-        return this.config.deepSearch.chatgptModel?.trim()
-          || this.config.agent.chatgptModel?.trim()
-          || fallback
+        return this.config.deepSearch.chatgptModel?.trim() || ''
       case 'ollama':
-        return fallback
+        return 'ollama-search-api'
       default:
-        return fallback
+        return ''
     }
   }
 
@@ -329,11 +275,11 @@ ${focus}
       return {
         agentId: 'deepsearch-model',
         perspective: `DeepSearch 模型搜索: ${query.focus}`,
-        findings: 'DeepSearch LLM 搜索源均已禁用，请开启至少一个来源（Grok/Gemini/ChatGPT/Ollama）',
+        findings: 'DeepSearch 未配置可用搜索来源。请配置 deepSearch.grokModel / geminiModel / chatgptModel，或在 api.apiKeys 启用 ollama。',
         sources: [],
         confidence: 0,
         failed: true,
-        error: 'all deepsearch llm providers disabled',
+        error: 'no deepsearch providers configured',
       }
     }
 

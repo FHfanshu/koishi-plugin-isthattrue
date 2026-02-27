@@ -1,10 +1,13 @@
 import { Tool } from '@langchain/core/tools'
+import type { RunnableConfig } from '@langchain/core/runnables'
+import type { CallbackManagerForToolRun } from '@langchain/core/callbacks/manager'
 import { Context } from 'koishi'
 import type { DeepSearchReport } from '../types'
 import { Config } from '../config'
 import { DeepSearchController } from '../agents/deepSearchController'
 import { ChatlunaAdapter } from './chatluna'
 import { DeepSearchTaskService } from './deepSearchTaskService'
+import { withTimeout } from '../utils/async'
 
 const DEEP_SEARCH_TOOL_NAME = 'deep_search'
 const DEEP_SEARCH_TOOL_DESCRIPTION = '深度搜索验证：输入待核查文本，执行多轮迭代搜索，返回综合发现与来源。'
@@ -25,6 +28,7 @@ class DeepSearchTool extends Tool {
   name = DEEP_SEARCH_TOOL_NAME
   description = DEEP_SEARCH_TOOL_DESCRIPTION
   private logger
+  private controller: DeepSearchController
 
   constructor(
     private ctx: Context,
@@ -33,14 +37,26 @@ class DeepSearchTool extends Tool {
   ) {
     super()
     this.logger = ctx.logger('chatluna-fact-check')
+    this.controller = new DeepSearchController(ctx, config, new ChatlunaAdapter(ctx, config))
   }
 
-  async _call(input: string): Promise<string> {
+  /** 工具整体硬超时（毫秒），必须低于 chatluna-character 的 lock timeout (180s) */
+  private static readonly HARD_TIMEOUT_MS = 120_000
+
+  /** 异步模式下后台任务的宽松超时（毫秒） */
+  private static readonly ASYNC_TIMEOUT_MS = 10 * 60_000
+
+  async _call(
+    input: string,
+    _runManager?: CallbackManagerForToolRun,
+    config?: RunnableConfig
+  ): Promise<string> {
     const rawInput = (input || '').trim()
     if (!rawInput) {
       return '[DeepSearch]\n输入为空，请提供需要核查的文本。'
     }
 
+    // JSON action 输入（submit/status/result）走原有异步任务模式
     const parsedAction = this.parseActionInput(rawInput)
     if (parsedAction.type === 'invalid') {
       return `[DeepSearch]\n${parsedAction.message}`
@@ -55,18 +71,47 @@ class DeepSearchTool extends Tool {
       this.logger.warn(`[DeepSearchTool] 输入过长，已截断到 ${maxInputChars} 字符`)
     }
 
+    // 透明异步模式：秒返 + 后台执行 + session.send() 推送结果
+    const session = (config as any)?.configurable?.session
+    if (this.config.agent.asyncMode && session) {
+      this.logger.info('[DeepSearchTool] 透明异步模式启动')
+      this.executeAsync(claim, session)
+      return '[DeepSearch]\n深度搜索任务已在后台启动，结果将稍后自动发送到本会话。请基于当前已有信息回答用户，不要猜测搜索结果。'
+    }
+
+    // 同步模式：硬超时兜底
     try {
-      const controller = new DeepSearchController(
-        this.ctx,
-        this.config,
-        new ChatlunaAdapter(this.ctx, this.config)
+      const report = await withTimeout(
+        this.controller.search(claim),
+        DeepSearchTool.HARD_TIMEOUT_MS,
+        'DeepSearch 整体'
       )
-      const report = await controller.search(claim)
       return this.formatReport(report)
     } catch (error) {
-      this.logger.error('[DeepSearchTool] 执行失败:', error)
+      this.logger.error('[DeepSearchTool] 执行失败（可能超时）:', error)
       return `[DeepSearch]\n执行失败: ${(error as Error).message}`
     }
+  }
+
+  /**
+   * 透明异步后台执行：不阻塞工具返回，完成后通过 session.send() 推送结果。
+   */
+  private executeAsync(claim: string, session: any): void {
+    withTimeout(
+      this.controller.search(claim),
+      DeepSearchTool.ASYNC_TIMEOUT_MS,
+      'DeepSearch 异步'
+    )
+      .then((report) => {
+        return session.send(`[DeepSearch 异步结果]\n${this.formatReport(report)}`)
+      })
+      .catch((error: Error) => {
+        this.logger.error('[DeepSearchTool] 异步执行失败:', error)
+        return session.send(`[DeepSearch 异步结果]\n执行失败: ${error.message}`).catch(() => {})
+      })
+      .catch(() => {
+        // session.send 失败，静默忽略
+      })
   }
 
   private parseActionInput(rawInput: string): ActionParseResult {

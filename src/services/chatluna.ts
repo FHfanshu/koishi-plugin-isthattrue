@@ -88,7 +88,7 @@ export class ChatlunaAdapter {
     }
 
     // 打印请求体
-    if (this.config?.tof?.logLLMDetails || this.config?.logLLMDetails) {
+    if (this.config?.factCheck?.logLLMDetails || this.config?.logLLMDetails) {
       this.logger.info(`[LLM Request] Model: ${request.model}\nSystem: ${request.systemPrompt || 'None'}\nMessage: ${typeof messageContent === 'string' ? messageContent.substring(0, 500) : 'Complex content'}`)
     }
 
@@ -111,7 +111,7 @@ export class ChatlunaAdapter {
       : JSON.stringify(response.content)
 
     // 打印响应体
-    if (this.config?.tof?.logLLMDetails || this.config?.logLLMDetails) {
+    if (this.config?.factCheck?.logLLMDetails || this.config?.logLLMDetails) {
       this.logger.info(`[LLM Response] Model: ${request.model}\nContent: ${content}`)
     }
 

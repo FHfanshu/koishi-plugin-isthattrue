@@ -1,34 +1,12 @@
 import { Schema } from 'koishi';
 /**
- * Tof 命令配置 - 用于 tof 指令的事实核查流程
+ * FactCheck 运行配置
  */
-export interface TofConfig {
-    /** 判决模型 */
-    model: string;
-    /** 搜索模型 */
-    searchModel: string;
-    /** Chatluna Search 使用的模型 */
-    chatlunaSearchModel: string;
-    /** 启用 Chatluna 搜索集成 */
-    enableChatlunaSearch: boolean;
-    /** 搜索关键词多样化模型 */
-    chatlunaSearchDiversifyModel: string;
+export interface FactCheckConfig {
     /** 超时时间（毫秒） */
     timeout: number;
     /** 最大重试次数 */
     maxRetries: number;
-    /** 输出格式 */
-    outputFormat: 'auto' | 'markdown' | 'plain';
-    /** 是否使用合并转发消息 */
-    useForwardMessage: boolean;
-    /** 合并转发最大节点数，超过则回退普通消息 */
-    forwardMaxNodes: number;
-    /** 合并转发总字符数上限，超过则回退普通消息 */
-    forwardMaxTotalChars: number;
-    /** 合并转发单节点字符数上限 */
-    forwardMaxSegmentChars: number;
-    /** 是否显示详细过程 */
-    verbose: boolean;
     /** HTTP 代理模式 */
     proxyMode: 'follow-global' | 'direct' | 'custom';
     /** 自定义 HTTP 代理地址（仅 custom 模式） */
@@ -42,23 +20,17 @@ export interface TofConfig {
 export interface AgentToolConfig {
     /** 是否注册为 Chatluna 工具 */
     enable: boolean;
-    /** 是否注册多源深度搜索工具（legacy，默认关闭，建议改用 deep_search） */
-    enableDeepTool: boolean;
     /** 是否注册快速搜索工具（默认作为 fact_check） */
     enableQuickTool: boolean;
-    /** 多源深度搜索工具名称（legacy） */
-    name: string;
     /** 快速搜索工具名称 */
     quickToolName: string;
-    /** 多源深度搜索工具描述（legacy） */
-    description: string;
     /** 快速搜索工具描述 */
     quickToolDescription: string;
     /** 工具输入最大长度 */
     maxInputChars: number;
     /** 工具返回来源数量上限 */
     maxSources: number;
-    /** Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel） */
+    /** Gemini 快速搜索模型（留空时回退 geminiModel/factCheck.chatlunaSearchModel） */
     quickToolModel: string;
     /** Gemini 快速搜索超时（毫秒） */
     quickToolTimeout: number;
@@ -80,24 +52,12 @@ export interface AgentToolConfig {
     ollamaSearchContextMaxSources: number;
     /** 启用多源并行搜索 */
     enableMultiSourceSearch: boolean;
-    /** 启用 Grok 源 */
-    searchUseGrok: boolean;
-    /** 启用 Gemini 源 */
-    searchUseGemini: boolean;
-    /** 启用 ChatGPT 源 */
-    searchUseChatgpt: boolean;
-    /** 启用 Ollama Search 源 */
-    searchUseOllama: boolean;
     /** Grok 模型 */
     grokModel: string;
     /** Gemini 模型 */
     geminiModel: string;
     /** ChatGPT 模型 */
     chatgptModel: string;
-    /** Ollama Search API 地址 */
-    ollamaSearchApiBase: string;
-    /** Ollama Search API Key（可选） */
-    ollamaSearchApiKey: string;
     /** Ollama Search 返回结果数 */
     ollamaSearchMaxResults: number;
     /** Ollama Search 超时（毫秒） */
@@ -110,6 +70,8 @@ export interface AgentToolConfig {
     fastReturnMaxWaitMs: number;
     /** 每个来源输出最大长度 */
     maxFindingsChars: number;
+    /** 启用异步模式（工具秒返，完成后自动推送结果到会话，规避 chatluna-character 锁超时） */
+    asyncMode: boolean;
 }
 /**
  * DeepSearch 配置
@@ -136,24 +98,12 @@ export interface DeepSearchConfig {
     minConfidenceThreshold: number | null;
     /** 最少来源数量阈值（可选；留空时仅由 LLM 评估决定） */
     minSourcesThreshold: number | null;
-    /** 启用 Grok 作为 DeepSearch LLM 搜索源 */
-    searchUseGrok: boolean;
-    /** 启用 Gemini 作为 DeepSearch LLM 搜索源 */
-    searchUseGemini: boolean;
-    /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
-    searchUseChatgpt: boolean;
-    /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
-    searchUseOllama: boolean;
-    /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
+    /** Grok 模型（留空则跳过 Grok 源） */
     grokModel: string;
-    /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
+    /** Gemini 模型（留空则跳过 Gemini 源） */
     geminiModel: string;
-    /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
+    /** ChatGPT 模型（留空则跳过 ChatGPT 源） */
     chatgptModel: string;
-    /** Ollama Search API 地址 */
-    ollamaSearchApiBase: string;
-    /** Ollama Search API Key（可选） */
-    ollamaSearchApiKey: string;
     /** Ollama Search 返回结果数 */
     ollamaSearchMaxResults: number;
     /** Ollama Search 超时（毫秒） */
@@ -165,15 +115,14 @@ export interface DeepSearchConfig {
 }
 /**
  * API Key / Base URL 统一配置
- * 建议新用户优先在这里集中填写
  */
 export interface ApiConfig {
-    /** 统一 API 表格配置：[来源, API Key, Base URL, 是否启用] */
-    apiKeys: [string, string, string, boolean][];
-    /** 统一 Ollama Search API Base URL（可被 agent/deepSearch 覆盖） */
-    ollamaSearchApiBase: string;
-    /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
-    ollamaSearchApiKey: string;
+    /** Ollama API Key */
+    ollamaApiKey: string;
+    /** Ollama Base URL（留空使用默认） */
+    ollamaBaseUrl: string;
+    /** 是否启用 Ollama 搜索 */
+    ollamaEnabled: boolean;
 }
 /**
  * 插件配置 Schema
@@ -181,8 +130,8 @@ export interface ApiConfig {
 export interface Config {
     /** API Key / Base URL 统一配置 */
     api: ApiConfig;
-    /** Tof 命令配置 */
-    tof: TofConfig;
+    /** FactCheck 运行配置 */
+    factCheck: FactCheckConfig;
     /** Agent 工具配置 */
     agent: AgentToolConfig;
     /** DeepSearch 配置 */

@@ -17,6 +17,7 @@ export declare class DeepSearchTaskService {
     private ctx;
     private config;
     private logger;
+    private static readonly HARD_TIMEOUT_MS;
     private tasks;
     private queue;
     private runningCount;
@@ -32,5 +33,4 @@ export declare class DeepSearchTaskService {
     private cleanupExpiredTasks;
     private generateTaskId;
     private getTaskTimeoutMs;
-    private withTimeout;
 }

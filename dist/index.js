@@ -1,4 +1,4 @@
-import { defineComponent as I, inject as M, computed as A, onMounted as N, watch as B, onBeforeUnmount as D, h as F } from "vue";
+import { defineComponent as M, inject as A, computed as T, onMounted as N, watch as B, onBeforeUnmount as D, h as F } from "vue";
 const z = /* @__PURE__ */ new Set([
   "isthattrue",
   "chatluna-fact-check",
@@ -14,21 +14,18 @@ const z = /* @__PURE__ */ new Set([
   {
     title: "FactCheck",
     sections: [
-      { key: "factcheck-basic", title: "FactCheck 基础" },
-      { key: "context-injection", title: "搜索源上下文注入" }
+      { key: "factcheck-tool", title: "Fact Check 工具" },
+      { key: "context-injection", title: "上下文注入" },
+      { key: "multi-source", title: "多源搜索" },
+      { key: "factcheck-search", title: "搜索集成" }
     ]
   },
   {
     title: "DeepSearch",
     sections: [
       { key: "deep-search", title: "DeepSearch 迭代搜索" },
-      { key: "deep-llm", title: "LLM 搜索源" }
-    ]
-  },
-  {
-    title: "Tof",
-    sections: [
-      { key: "tof-optional", title: "Tof（可选）" }
+      { key: "deep-llm", title: "LLM 搜索源" },
+      { key: "deep-chatluna", title: "Chatluna 搜索集成" }
     ]
   },
   {
@@ -38,12 +35,14 @@ const z = /* @__PURE__ */ new Set([
     ]
   }
 ], O = C.flatMap((t) => t.sections), E = {
-  "factcheck-basic": ["FactCheck 基础", "Fact Check 工具", "Agent 工具配置"],
-  "context-injection": ["搜索源上下文注入", "多源搜索配置", "Chatluna 搜索集成", "SearXNG 搜索集成"],
   "api-key-table": ["API Key / Base URL 对照表", "API Key / Base URL 统一配置", "统一配置"],
+  "factcheck-tool": ["Fact Check 工具", "FactCheck 基础", "Agent 工具配置"],
+  "context-injection": ["搜索源上下文注入", "SearXNG 搜索集成"],
+  "multi-source": ["多源搜索配置"],
+  "factcheck-search": ["搜索集成"],
   "deep-search": ["DeepSearch 迭代搜索", "DeepSearch 配置", "DeepSearch"],
   "deep-llm": ["LLM 搜索源"],
-  "tof-optional": ["Tof（可选）", "Tof 命令配置", "基础设置", "输出格式"],
+  "deep-chatluna": ["Chatluna 搜索集成"],
   "debug-troubleshooting": ["调试与排障", "调试"]
 }, L = "isthattrue-nav-style";
 function P() {
@@ -118,7 +117,7 @@ function P() {
 }
 `, document.head.appendChild(t);
 }
-function p(t) {
+function h(t) {
   return t.replace(/\s+/g, "").trim();
 }
 function w() {
@@ -127,17 +126,17 @@ function w() {
   ));
 }
 function U(t) {
-  const e = [t.title, ...E[t.key] || []].map((r) => p(r)).filter(Boolean), n = w();
+  const e = [t.title, ...E[t.key] || []].map((r) => h(r)).filter(Boolean), n = w();
   for (const r of n) {
-    const i = p(r.textContent || "");
-    if (i && e.some((d) => i.includes(d)))
+    const c = h(r.textContent || "");
+    if (c && e.some((d) => c.includes(d)))
       return r;
   }
   return null;
 }
 function S(t) {
-  const e = p(t);
-  return O.find((n) => [n.title, ...E[n.key] || []].map((i) => p(i)).filter(Boolean).some((i) => e.includes(i)));
+  const e = h(t);
+  return O.find((n) => [n.title, ...E[n.key] || []].map((c) => h(c)).filter(Boolean).some((c) => e.includes(c)));
 }
 function R() {
   P();
@@ -151,16 +150,16 @@ function R() {
 </div>
 <div class="isthattrue-nav-body"></div>
 `, document.body.appendChild(e);
-  const n = e.querySelector(".isthattrue-nav-body"), r = e.querySelector(".isthattrue-nav-toggle"), i = e.querySelector(".isthattrue-nav-header"), d = /* @__PURE__ */ new Map();
+  const n = e.querySelector(".isthattrue-nav-body"), r = e.querySelector(".isthattrue-nav-toggle"), c = e.querySelector(".isthattrue-nav-header"), d = /* @__PURE__ */ new Map();
   for (const o of C) {
     const a = document.createElement("div");
     a.className = "isthattrue-nav-group", a.textContent = o.title, n.appendChild(a);
-    for (const c of o.sections) {
-      const s = document.createElement("button");
-      s.type = "button", s.className = "isthattrue-nav-item", s.textContent = c.title, s.addEventListener("click", () => {
-        const u = U(c);
+    for (const s of o.sections) {
+      const i = document.createElement("button");
+      i.type = "button", i.className = "isthattrue-nav-item", i.textContent = s.title, i.addEventListener("click", () => {
+        const u = U(s);
         u && u.scrollIntoView({ behavior: "smooth", block: "start" });
-      }), n.appendChild(s), d.set(c.key, s);
+      }), n.appendChild(i), d.set(s.key, i);
     }
   }
   r.addEventListener("click", (o) => {
@@ -168,26 +167,26 @@ function R() {
     const a = e.classList.toggle("collapsed");
     r.textContent = a ? "⌃" : "⌄";
   });
-  let f = 0, v = 0, g = 0, x = 0;
-  const h = (o) => {
-    const a = o.clientX - f, c = o.clientY - v, s = Math.max(0, x + c), u = Math.max(0, g - a);
-    e.style.top = `${s}px`, e.style.right = `${u}px`;
+  let v = 0, f = 0, g = 0, y = 0;
+  const p = (o) => {
+    const a = o.clientX - v, s = o.clientY - f, i = Math.max(0, y + s), u = Math.max(0, g - a);
+    e.style.top = `${i}px`, e.style.right = `${u}px`;
   }, m = () => {
-    document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m);
+    document.removeEventListener("mousemove", p), document.removeEventListener("mouseup", m);
   };
-  i.addEventListener("mousedown", (o) => {
-    o.target.closest(".isthattrue-nav-toggle") || (o.preventDefault(), f = o.clientX, v = o.clientY, g = parseFloat(e.style.right || "60"), x = parseFloat(e.style.top || "260"), document.addEventListener("mousemove", h), document.addEventListener("mouseup", m));
+  c.addEventListener("mousedown", (o) => {
+    o.target.closest(".isthattrue-nav-toggle") || (o.preventDefault(), v = o.clientX, f = o.clientY, g = parseFloat(e.style.right || "60"), y = parseFloat(e.style.top || "260"), document.addEventListener("mousemove", p), document.addEventListener("mouseup", m));
   });
   let l = null;
-  const y = () => {
+  const x = () => {
     l == null || l.disconnect(), l = new IntersectionObserver((a) => {
-      var c;
-      for (const s of a) {
-        if (!s.isIntersecting) continue;
-        const u = (s.target.textContent || "").trim(), b = S(u);
+      var s;
+      for (const i of a) {
+        if (!i.isIntersecting) continue;
+        const u = (i.target.textContent || "").trim(), b = S(u);
         if (b) {
-          for (const T of d.values()) T.classList.remove("active");
-          (c = d.get(b.key)) == null || c.classList.add("active");
+          for (const I of d.values()) I.classList.remove("active");
+          (s = d.get(b.key)) == null || s.classList.add("active");
           break;
         }
       }
@@ -198,22 +197,22 @@ function R() {
     });
     const o = w();
     for (const a of o) {
-      const c = a.textContent || "";
-      S(c) && l.observe(a);
+      const s = a.textContent || "";
+      S(s) && l.observe(a);
     }
   }, k = new MutationObserver(() => {
-    window.setTimeout(y, 200);
+    window.setTimeout(x, 200);
   });
-  return k.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(y, 300), () => {
-    l == null || l.disconnect(), k.disconnect(), document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m), e.remove();
+  return k.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(x, 300), () => {
+    l == null || l.disconnect(), k.disconnect(), document.removeEventListener("mousemove", p), document.removeEventListener("mouseup", m), e.remove();
   };
 }
-const _ = I({
+const _ = M({
   name: "FactCheckDetailsLoader",
   setup() {
-    const t = M("plugin:name"), e = A(() => {
-      const i = t == null ? void 0 : t.value;
-      return !!i && z.has(i);
+    const t = A("plugin:name"), e = T(() => {
+      const c = t == null ? void 0 : t.value;
+      return !!c && z.has(c);
     });
     let n = null;
     const r = () => {

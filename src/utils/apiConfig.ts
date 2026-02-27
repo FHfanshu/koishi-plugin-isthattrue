@@ -10,57 +10,15 @@ function pick(...values: Array<string | undefined | null>): string {
   return ''
 }
 
-function getEnabledApiEntry(
-  config: Config
-): { apiKey: string; baseUrl: string } | null {
-  const table = Array.isArray(config.api?.apiKeys) ? config.api.apiKeys : []
-  for (const row of table) {
-    if (!Array.isArray(row) || row.length < 4) continue
-    const [rowProvider, rowKey, rowBase, rowEnabled] = row
-    if (rowProvider !== 'ollama') continue
-    if (!rowEnabled) continue
-    return {
-      apiKey: pick(rowKey),
-      baseUrl: pick(rowBase),
-    }
-  }
-  return null
+export function hasEnabledApiProvider(config: Config, provider: string): boolean {
+  if (provider !== 'ollama') return false
+  return config.api?.ollamaEnabled !== false
 }
 
-export function resolveOllamaApiBase(config: Config, scope: 'agent' | 'deepsearch'): string {
-  const entry = getEnabledApiEntry(config)
-  if (scope === 'deepsearch') {
-    return pick(
-      config.deepSearch.ollamaSearchApiBase,
-      entry?.baseUrl,
-      config.api.ollamaSearchApiBase,
-      DEFAULT_OLLAMA_API_BASE
-    )
-  }
-
-  return pick(
-    config.agent.ollamaSearchApiBase,
-    entry?.baseUrl,
-    config.api.ollamaSearchApiBase,
-    DEFAULT_OLLAMA_API_BASE
-  )
+export function resolveOllamaApiBase(config: Config, _scope: 'agent' | 'deepsearch'): string {
+  return pick(config.api?.ollamaBaseUrl, DEFAULT_OLLAMA_API_BASE)
 }
 
-export function resolveOllamaApiKey(config: Config, scope: 'agent' | 'deepsearch'): string {
-  const entry = getEnabledApiEntry(config)
-  if (scope === 'deepsearch') {
-    return pick(
-      config.deepSearch.ollamaSearchApiKey,
-      entry?.apiKey,
-      config.api.ollamaSearchApiKey,
-      process.env.OLLAMA_API_KEY
-    )
-  }
-
-  return pick(
-    config.agent.ollamaSearchApiKey,
-    entry?.apiKey,
-    config.api.ollamaSearchApiKey,
-    process.env.OLLAMA_API_KEY
-  )
+export function resolveOllamaApiKey(config: Config, _scope: 'agent' | 'deepsearch'): string {
+  return pick(config.api?.ollamaApiKey, process.env.OLLAMA_API_KEY)
 }

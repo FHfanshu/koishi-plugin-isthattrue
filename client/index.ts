@@ -2,7 +2,7 @@ import { Context } from '@koishijs/client'
 import { computed, defineComponent, inject, onBeforeUnmount, onMounted, type ComputedRef, watch, h } from 'vue'
 
 type NavSection = {
-  key: 'api-key-table' | 'factcheck-basic' | 'context-injection' | 'deep-search' | 'deep-llm' | 'tof-optional' | 'debug-troubleshooting'
+  key: 'api-key-table' | 'factcheck-tool' | 'context-injection' | 'multi-source' | 'factcheck-search' | 'deep-search' | 'deep-llm' | 'deep-chatluna' | 'debug-troubleshooting'
   title: string
 }
 
@@ -28,8 +28,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'FactCheck',
     sections: [
-      { key: 'factcheck-basic', title: 'FactCheck 基础' },
-      { key: 'context-injection', title: '搜索源上下文注入' },
+      { key: 'factcheck-tool', title: 'Fact Check 工具' },
+      { key: 'context-injection', title: '上下文注入' },
+      { key: 'multi-source', title: '多源搜索' },
+      { key: 'factcheck-search', title: '搜索集成' },
     ],
   },
   {
@@ -37,12 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
     sections: [
       { key: 'deep-search', title: 'DeepSearch 迭代搜索' },
       { key: 'deep-llm', title: 'LLM 搜索源' },
-    ],
-  },
-  {
-    title: 'Tof',
-    sections: [
-      { key: 'tof-optional', title: 'Tof（可选）' },
+      { key: 'deep-chatluna', title: 'Chatluna 搜索集成' },
     ],
   },
   {
@@ -55,12 +52,14 @@ const NAV_GROUPS: NavGroup[] = [
 
 const NAV_SECTIONS: NavSection[] = NAV_GROUPS.flatMap((group) => group.sections)
 const SECTION_TITLE_ALIASES: Record<NavSection['key'], string[]> = {
-  'factcheck-basic': ['FactCheck 基础', 'Fact Check 工具', 'Agent 工具配置'],
-  'context-injection': ['搜索源上下文注入', '多源搜索配置', 'Chatluna 搜索集成', 'SearXNG 搜索集成'],
   'api-key-table': ['API Key / Base URL 对照表', 'API Key / Base URL 统一配置', '统一配置'],
+  'factcheck-tool': ['Fact Check 工具', 'FactCheck 基础', 'Agent 工具配置'],
+  'context-injection': ['搜索源上下文注入', 'SearXNG 搜索集成'],
+  'multi-source': ['多源搜索配置'],
+  'factcheck-search': ['搜索集成'],
   'deep-search': ['DeepSearch 迭代搜索', 'DeepSearch 配置', 'DeepSearch'],
   'deep-llm': ['LLM 搜索源'],
-  'tof-optional': ['Tof（可选）', 'Tof 命令配置', '基础设置', '输出格式'],
+  'deep-chatluna': ['Chatluna 搜索集成'],
   'debug-troubleshooting': ['调试与排障', '调试'],
 }
 

@@ -1,10 +1,10 @@
 import { Context } from 'koishi';
 import { MessageContent } from '../types';
-import type { TofConfig } from '../config';
+import type { FactCheckConfig } from '../config';
 interface MessageParserOptions {
     imageTimeoutMs?: number;
     maxImageBytes?: number;
-    tofConfig?: TofConfig;
+    factCheckConfig?: FactCheckConfig;
 }
 /**
  * 消息解析服务
@@ -14,9 +14,8 @@ export declare class MessageParser {
     private ctx;
     private imageTimeoutMs;
     private maxImageBytes;
-    private tofConfig?;
+    private factCheckConfig?;
     constructor(ctx: Context, options?: MessageParserOptions);
-    private stripLeadingCommand;
     /**
      * 从会话中提取引用消息的内容
      */

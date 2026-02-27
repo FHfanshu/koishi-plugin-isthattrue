@@ -1,35 +1,13 @@
 import { Schema } from 'koishi'
 
 /**
- * Tof 命令配置 - 用于 tof 指令的事实核查流程
+ * FactCheck 运行配置
  */
-export interface TofConfig {
-  /** 判决模型 */
-  model: string
-  /** 搜索模型 */
-  searchModel: string
-  /** Chatluna Search 使用的模型 */
-  chatlunaSearchModel: string
-  /** 启用 Chatluna 搜索集成 */
-  enableChatlunaSearch: boolean
-  /** 搜索关键词多样化模型 */
-  chatlunaSearchDiversifyModel: string
+export interface FactCheckConfig {
   /** 超时时间（毫秒） */
   timeout: number
   /** 最大重试次数 */
   maxRetries: number
-  /** 输出格式 */
-  outputFormat: 'auto' | 'markdown' | 'plain'
-  /** 是否使用合并转发消息 */
-  useForwardMessage: boolean
-  /** 合并转发最大节点数，超过则回退普通消息 */
-  forwardMaxNodes: number
-  /** 合并转发总字符数上限，超过则回退普通消息 */
-  forwardMaxTotalChars: number
-  /** 合并转发单节点字符数上限 */
-  forwardMaxSegmentChars: number
-  /** 是否显示详细过程 */
-  verbose: boolean
   /** HTTP 代理模式 */
   proxyMode: 'follow-global' | 'direct' | 'custom'
   /** 自定义 HTTP 代理地址（仅 custom 模式） */
@@ -44,23 +22,17 @@ export interface TofConfig {
 export interface AgentToolConfig {
   /** 是否注册为 Chatluna 工具 */
   enable: boolean
-  /** 是否注册多源深度搜索工具（legacy，默认关闭，建议改用 deep_search） */
-  enableDeepTool: boolean
   /** 是否注册快速搜索工具（默认作为 fact_check） */
   enableQuickTool: boolean
-  /** 多源深度搜索工具名称（legacy） */
-  name: string
   /** 快速搜索工具名称 */
   quickToolName: string
-  /** 多源深度搜索工具描述（legacy） */
-  description: string
   /** 快速搜索工具描述 */
   quickToolDescription: string
   /** 工具输入最大长度 */
   maxInputChars: number
   /** 工具返回来源数量上限 */
   maxSources: number
-  /** Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel） */
+  /** Gemini 快速搜索模型（留空时回退 geminiModel/factCheck.chatlunaSearchModel） */
   quickToolModel: string
   /** Gemini 快速搜索超时（毫秒） */
   quickToolTimeout: number
@@ -82,24 +54,12 @@ export interface AgentToolConfig {
   ollamaSearchContextMaxSources: number
   /** 启用多源并行搜索 */
   enableMultiSourceSearch: boolean
-  /** 启用 Grok 源 */
-  searchUseGrok: boolean
-  /** 启用 Gemini 源 */
-  searchUseGemini: boolean
-  /** 启用 ChatGPT 源 */
-  searchUseChatgpt: boolean
-  /** 启用 Ollama Search 源 */
-  searchUseOllama: boolean
   /** Grok 模型 */
   grokModel: string
   /** Gemini 模型 */
   geminiModel: string
   /** ChatGPT 模型 */
   chatgptModel: string
-  /** Ollama Search API 地址 */
-  ollamaSearchApiBase: string
-  /** Ollama Search API Key（可选） */
-  ollamaSearchApiKey: string
   /** Ollama Search 返回结果数 */
   ollamaSearchMaxResults: number
   /** Ollama Search 超时（毫秒） */
@@ -112,6 +72,8 @@ export interface AgentToolConfig {
   fastReturnMaxWaitMs: number
   /** 每个来源输出最大长度 */
   maxFindingsChars: number
+  /** 启用异步模式（工具秒返，完成后自动推送结果到会话，规避 chatluna-character 锁超时） */
+  asyncMode: boolean
 }
 
 /**
@@ -139,24 +101,12 @@ export interface DeepSearchConfig {
   minConfidenceThreshold: number | null
   /** 最少来源数量阈值（可选；留空时仅由 LLM 评估决定） */
   minSourcesThreshold: number | null
-  /** 启用 Grok 作为 DeepSearch LLM 搜索源 */
-  searchUseGrok: boolean
-  /** 启用 Gemini 作为 DeepSearch LLM 搜索源 */
-  searchUseGemini: boolean
-  /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
-  searchUseChatgpt: boolean
-  /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
-  searchUseOllama: boolean
-  /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
+  /** Grok 模型（留空则跳过 Grok 源） */
   grokModel: string
-  /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
+  /** Gemini 模型（留空则跳过 Gemini 源） */
   geminiModel: string
-  /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
+  /** ChatGPT 模型（留空则跳过 ChatGPT 源） */
   chatgptModel: string
-  /** Ollama Search API 地址 */
-  ollamaSearchApiBase: string
-  /** Ollama Search API Key（可选） */
-  ollamaSearchApiKey: string
   /** Ollama Search 返回结果数 */
   ollamaSearchMaxResults: number
   /** Ollama Search 超时（毫秒） */
@@ -169,15 +119,14 @@ export interface DeepSearchConfig {
 
 /**
  * API Key / Base URL 统一配置
- * 建议新用户优先在这里集中填写
  */
 export interface ApiConfig {
-  /** 统一 API 表格配置：[来源, API Key, Base URL, 是否启用] */
-  apiKeys: [string, string, string, boolean][]
-  /** 统一 Ollama Search API Base URL（可被 agent/deepSearch 覆盖） */
-  ollamaSearchApiBase: string
-  /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
-  ollamaSearchApiKey: string
+  /** Ollama API Key */
+  ollamaApiKey: string
+  /** Ollama Base URL（留空使用默认） */
+  ollamaBaseUrl: string
+  /** 是否启用 Ollama 搜索 */
+  ollamaEnabled: boolean
 }
 
 /**
@@ -186,22 +135,16 @@ export interface ApiConfig {
 export interface Config {
   /** API Key / Base URL 统一配置 */
   api: ApiConfig
-  /** Tof 命令配置 */
-  tof: TofConfig
+  /** FactCheck 运行配置 */
+  factCheck: FactCheckConfig
   /** Agent 工具配置 */
   agent: AgentToolConfig
   /** DeepSearch 配置 */
   deepSearch: DeepSearchConfig
 }
 
-// Tof 命令配置 Schema
-const tofConfigSchema = Schema.object({
-  model: Schema.dynamic('model')
-    .default('google/gemini-3-flash')
-    .description('判决模型 (用于最终判决，推荐 Gemini-3-Flash)'),
-  searchModel: Schema.dynamic('model')
-    .default('x-ai/grok-4-1')
-    .description('搜索模型 (用于深度搜索，推荐 Grok-4-1)'),
+// FactCheck 运行配置 Schema
+const factCheckDebugSchema = Schema.object({
   timeout: Schema.number()
     .min(10000)
     .max(300000)
@@ -212,50 +155,6 @@ const tofConfigSchema = Schema.object({
     .max(5)
     .default(2)
     .description('失败重试次数'),
-}).description('基础设置')
-
-const tofSearchSchema = Schema.object({
-  chatlunaSearchModel: Schema.dynamic('model')
-    .default('')
-    .description('Chatluna Search 使用的模型 (可选；chatluna-search-service 不稳定时可留空并使用 fact_check 工具替代)'),
-  enableChatlunaSearch: Schema.boolean()
-    .default(false)
-    .description('启用 Chatluna 搜索集成（默认关闭，建议优先使用 fact_check 工具作为 LLMSearch 替代）'),
-  chatlunaSearchDiversifyModel: Schema.dynamic('model')
-    .default('')
-    .description('搜索关键词多样化模型 (可选，推荐 Gemini 2.5 Flash Lite)'),
-}).description('搜索集成')
-
-const tofOutputSchema = Schema.object({
-  outputFormat: Schema.union([
-    Schema.const('auto').description('自动 (QQ 使用纯文本)'),
-    Schema.const('markdown').description('Markdown'),
-    Schema.const('plain').description('纯文本'),
-  ]).default('auto').description('输出格式'),
-  useForwardMessage: Schema.boolean()
-    .default(true)
-    .description('使用合并转发消息展示详情 (仅支持 QQ)'),
-  forwardMaxNodes: Schema.number()
-    .min(0)
-    .max(99)
-    .default(8)
-    .description('合并转发最大节点数，超过则回退普通消息（0 表示直接回退）'),
-  forwardMaxTotalChars: Schema.number()
-    .min(0)
-    .max(20000)
-    .default(3000)
-    .description('合并转发总字符数上限，超过则回退普通消息（0 表示直接回退）'),
-  forwardMaxSegmentChars: Schema.number()
-    .min(50)
-    .max(2000)
-    .default(500)
-    .description('合并转发单节点字符数上限'),
-  verbose: Schema.boolean()
-    .default(false)
-    .description('显示详细验证过程 (进度提示)'),
-}).description('输出格式')
-
-const tofDebugSchema = Schema.object({
   proxyMode: Schema.union([
     Schema.const('follow-global').description('遵循全局代理设置'),
     Schema.const('direct').description('不使用代理（仅本插件的 HTTP 请求）'),
@@ -267,28 +166,19 @@ const tofDebugSchema = Schema.object({
   logLLMDetails: Schema.boolean()
     .default(false)
     .description('是否打印 LLM 请求体和响应详情 (Debug 用)'),
-}).description('调试')
+}).description('调试与排障')
 
 // Agent 工具配置 Schema
 const agentToolSchema = Schema.object({
   enable: Schema.boolean()
     .default(true)
     .description('开启：注册事实核查为 Chatluna 可调用工具'),
-  enableDeepTool: Schema.boolean()
-    .default(false)
-    .description('开启：注册多源深度搜索工具（legacy，默认关闭，建议使用 deep_search）'),
   enableQuickTool: Schema.boolean()
     .default(true)
     .description('开启：注册快速网络搜索工具（默认工具名为 fact_check）'),
-  name: Schema.string()
-    .default('fact_check_deep')
-    .description('多源深度搜索工具名称（legacy，建议避免与 fact_check 重名）'),
   quickToolName: Schema.string()
     .default('fact_check')
     .description('快速搜索工具名称（建议保持 fact_check）'),
-  description: Schema.string()
-    .default('【Legacy】用于多源并行深度搜索。建议优先使用 deep_search 工具进行可迭代深搜。')
-    .description('多源深度搜索工具描述（legacy）'),
   quickToolDescription: Schema.string()
     .default('用于快速网络搜索。输入待核查文本，返回来源与摘要，适合作为常规 fact_check 工具。')
     .description('快速搜索工具描述'),
@@ -304,7 +194,7 @@ const agentToolSchema = Schema.object({
     .description('Chatluna 工具返回来源链接数量上限'),
   quickToolModel: Schema.dynamic('model')
     .default('')
-    .description('Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel）'),
+    .description('Gemini 快速搜索模型（留空时回退 geminiModel/factCheck.chatlunaSearchModel）'),
   quickToolTimeout: Schema.number()
     .min(3000)
     .max(120000)
@@ -355,34 +245,15 @@ const agentMultiSourceSchema = Schema.object({
   enableMultiSourceSearch: Schema.boolean()
     .default(true)
     .description('Agent 调用 fact_check 时，启用多源并行搜索'),
-  searchUseGrok: Schema.boolean()
-    .default(true)
-    .description('多源搜索包含 Grok'),
-  searchUseGemini: Schema.boolean()
-    .default(true)
-    .description('多源搜索包含 Gemini（需模型支持搜索工具）'),
-  searchUseChatgpt: Schema.boolean()
-    .default(false)
-    .description('多源搜索包含 ChatGPT（需模型支持搜索工具）'),
-  searchUseOllama: Schema.boolean()
-    .default(false)
-    .description('多源搜索包含 Ollama Search'),
   grokModel: Schema.dynamic('model')
-    .default('')
-    .description('Grok 来源模型（留空时回退 searchModel）'),
+    .default('x-ai/grok-4-1')
+    .description('Grok 来源模型（留空则跳过 Grok 来源）'),
   geminiModel: Schema.dynamic('model')
     .default('')
     .description('Gemini 来源模型（留空则跳过 Gemini 来源）'),
   chatgptModel: Schema.dynamic('model')
     .default('')
     .description('ChatGPT 来源模型（留空则跳过 ChatGPT 来源）'),
-  ollamaSearchApiBase: Schema.string()
-    .default('https://ollama.com/api/web_search')
-    .description('Agent 专用 Ollama Search Base URL。留空时回退到 api.ollamaSearchApiBase（Docker 场景填 Koishi 容器可达地址）'),
-  ollamaSearchApiKey: Schema.string()
-    .default('')
-    .role('secret')
-    .description('Agent 专用 Ollama Search API Key。留空时回退到 api.ollamaSearchApiKey，再回退环境变量 OLLAMA_API_KEY'),
   ollamaSearchMaxResults: Schema.number()
     .min(1)
     .max(10)
@@ -413,6 +284,9 @@ const agentMultiSourceSchema = Schema.object({
     .max(8000)
     .default(2000)
     .description('fact_check 输出中每个来源 findings 的最大字符数'),
+  asyncMode: Schema.boolean()
+    .default(true)
+    .description('启用异步模式：工具秒返"任务已启动"，完成后自动推送结果到会话。\\n开启后可规避 chatluna-character 的 180 秒锁超时，适合搜索耗时较长的场景。'),
 }).description('多源搜索配置')
 
 const deepSearchCoreSchema = Schema.object({
@@ -465,34 +339,15 @@ const deepSearchCoreSchema = Schema.object({
 }).description('DeepSearch 迭代搜索')
 
 const deepSearchLLMSourceSchema = Schema.object({
-  searchUseGrok: Schema.boolean()
-    .default(true)
-    .description('DeepSearch LLM 搜索源包含 Grok'),
-  searchUseGemini: Schema.boolean()
-    .default(true)
-    .description('DeepSearch LLM 搜索源包含 Gemini'),
-  searchUseChatgpt: Schema.boolean()
-    .default(false)
-    .description('DeepSearch LLM 搜索源包含 ChatGPT'),
-  searchUseOllama: Schema.boolean()
-    .default(false)
-    .description('DeepSearch 搜索源包含 Ollama Search'),
   grokModel: Schema.dynamic('model')
-    .default('')
-    .description('Grok 模型（留空回退 agent.grokModel/tof.searchModel）'),
+    .default('x-ai/grok-4-1')
+    .description('Grok 模型（留空则跳过 Grok 源）'),
   geminiModel: Schema.dynamic('model')
     .default('')
-    .description('Gemini 模型（留空回退 agent.geminiModel/tof.searchModel）'),
+    .description('Gemini 模型（留空则跳过 Gemini 源）'),
   chatgptModel: Schema.dynamic('model')
     .default('')
-    .description('ChatGPT 模型（留空回退 agent.chatgptModel/tof.searchModel）'),
-  ollamaSearchApiBase: Schema.string()
-    .default('https://ollama.com/api/web_search')
-    .description('DeepSearch 专用 Ollama Search Base URL。留空时回退到 api.ollamaSearchApiBase（Docker 场景填 Koishi 容器可达地址）'),
-  ollamaSearchApiKey: Schema.string()
-    .default('')
-    .role('secret')
-    .description('DeepSearch 专用 Ollama Search API Key。留空时回退到 api.ollamaSearchApiKey，再回退环境变量 OLLAMA_API_KEY'),
+    .description('ChatGPT 模型（留空则跳过 ChatGPT 源）'),
   ollamaSearchMaxResults: Schema.number()
     .min(1)
     .max(10)
@@ -515,27 +370,17 @@ const deepSearchChatlunaIntegrationSchema = Schema.object({
 }).description('Chatluna 搜索集成')
 
 const apiUnifiedSchema = Schema.object({
-  apiKeys: Schema.array(
-    Schema.tuple([
-      Schema.const('ollama').description('来源'),
-      Schema.string().role('secret').description('API Key（可留空）'),
-      Schema.string().description('Base URL（可留空）'),
-      Schema.boolean().default(true).description('是否启用'),
-    ])
-  )
-    .role('table')
-    .default([
-      ['ollama', '', 'https://ollama.com/api/web_search', true],
-    ])
-    .description('统一 API 表格配置（优先读取）。同来源取第一条已启用记录'),
-  ollamaSearchApiBase: Schema.string()
-    .default('https://ollama.com/api/web_search')
-    .description('统一 Ollama Search Base URL（兼容字段）。建议优先使用上方 apiKeys 表格；agent/deepSearch 同名字段可单独覆盖'),
-  ollamaSearchApiKey: Schema.string()
-    .default('')
+  ollamaApiKey: Schema.string()
     .role('secret')
-    .description('统一 Ollama Search API Key（兼容字段）。建议优先使用上方 apiKeys 表格；agent/deepSearch 同名字段可单独覆盖'),
-}).description('API Key / Base URL 对照表')
+    .default('')
+    .description('Ollama API Key（从 https://ollama.com 获取，填入后即可启用 Ollama 搜索）'),
+  ollamaBaseUrl: Schema.string()
+    .default('')
+    .description('Ollama Base URL（留空使用默认 https://ollama.com/api/web_search）'),
+  ollamaEnabled: Schema.boolean()
+    .default(true)
+    .description('启用 Ollama 搜索（关闭后不会作为 fact_check 搜索来源）'),
+}).description('Ollama 配置')
 
 export const Config = Schema.intersect([
   Schema.object({
@@ -550,13 +395,6 @@ export const Config = Schema.intersect([
       deepSearchLLMSourceSchema,
       deepSearchChatlunaIntegrationSchema,
     ]).description('DeepSearch'),
-    tof: Schema.intersect([
-      tofConfigSchema,
-      tofSearchSchema,
-      tofOutputSchema,
-    ]).description('Tof（可选）'),
-  }),
-  Schema.object({
-    tof: tofDebugSchema,
+    factCheck: factCheckDebugSchema.description('FactCheck 运行配置'),
   }),
 ]) as unknown as Schema<Config>
