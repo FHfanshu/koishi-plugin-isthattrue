@@ -8,14 +8,6 @@ export interface Config {
   mainModel: string
   /** 子搜索 Agent 模型 - 用于深度搜索 (推荐 Grok) */
   subSearchModel: string
-  /** Tavily API Key */
-  tavilyApiKey: string
-  /** Anspire API Key */
-  anspireApiKey: string
-  /** Kimi API Key */
-  kimiApiKey: string
-  /** 智谱 API Key */
-  zhipuApiKey: string
   /** Chatluna Search 使用的模型 */
   chatlunaSearchModel: string
   /** 启用 Chatluna 搜索集成 */
@@ -57,26 +49,6 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('模型配置'),
 
   Schema.object({
-    tavilyApiKey: Schema.string()
-      .default('')
-      .role('secret')
-      .description('Tavily API Key (可选，用于补充搜索)'),
-
-    anspireApiKey: Schema.string()
-      .default('')
-      .role('secret')
-      .description('Anspire API Key (可选，用于补充搜索)'),
-
-    kimiApiKey: Schema.string()
-      .default('')
-      .role('secret')
-      .description('Kimi API Key (可选，用于 Kimi K2 内置搜索)'),
-
-    zhipuApiKey: Schema.string()
-      .default('')
-      .role('secret')
-      .description('智谱 API Key (可选，用于智谱 Web Search)'),
-
     chatlunaSearchModel: Schema.dynamic('model')
       .default('')
       .description('Chatluna Search 使用的模型 (可选，用于调用 chatluna-search-service)'),
@@ -88,7 +60,7 @@ export const Config: Schema<Config> = Schema.intersect([
     chatlunaSearchDiversifyModel: Schema.dynamic('model')
       .default('')
       .description('搜索关键词多样化模型 (可选，推荐 Gemini 2.5 Flash Lite)'),
-  }).description('搜索API配置'),
+  }).description('搜索配置'),
 
   Schema.object({
     timeout: Schema.number()

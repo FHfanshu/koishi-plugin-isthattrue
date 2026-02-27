@@ -7,14 +7,6 @@ export interface Config {
     mainModel: string;
     /** 子搜索 Agent 模型 - 用于深度搜索 (推荐 Grok) */
     subSearchModel: string;
-    /** Tavily API Key */
-    tavilyApiKey: string;
-    /** Anspire API Key */
-    anspireApiKey: string;
-    /** Kimi API Key */
-    kimiApiKey: string;
-    /** 智谱 API Key */
-    zhipuApiKey: string;
     /** Chatluna Search 使用的模型 */
     chatlunaSearchModel: string;
     /** 启用 Chatluna 搜索集成 */

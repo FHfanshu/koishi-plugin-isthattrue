@@ -189,7 +189,7 @@ export function formatVerificationOutput(
     output += `📝 判决依据:\n${reasoning}\n`
 
     if (sources.length > 0) {
-      output += `\n源：\n`
+      output += `\n🔗 参考来源：\n`
       output += sources.map(s => `• ${s}`).join('\n')
       output += `\n`
     }

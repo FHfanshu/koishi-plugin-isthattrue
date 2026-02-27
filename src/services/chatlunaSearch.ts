@@ -35,14 +35,14 @@ export class ChatlunaSearchAgent {
     try {
       // 尝试导入 emptyEmbeddings
       try {
-        const inMemory = require('koishi-plugin-chatluna/llm-core/model/in_memory')
+        const inMemory = await import('koishi-plugin-chatluna/llm-core/model/in_memory')
         this.emptyEmbeddings = inMemory.emptyEmbeddings
         this.logger.debug('[ChatlunaSearch] emptyEmbeddings 已导入')
       } catch {
         this.logger.debug('[ChatlunaSearch] 无法导入 emptyEmbeddings，将使用 null')
       }
 
-      const chatluna = (this.ctx as any).chatluna
+      const chatluna = this.ctx.chatluna
       if (!chatluna?.platform) {
         this.logger.warn('[ChatlunaSearch] chatluna.platform 不可用')
         return
@@ -102,8 +102,8 @@ export class ChatlunaSearchAgent {
   isAvailable(): boolean {
     const enabled = this.config.enableChatlunaSearch !== false
     const hasModel = !!this.config.chatlunaSearchModel
-    const hasChatluna = !!(this.ctx as any).chatluna?.platform
-    return enabled && hasModel && hasChatluna
+    const hasChatluna = !!this.ctx.chatluna?.platform
+    return enabled && hasModel && hasChatluna && this.toolReady
   }
 
   /**
@@ -156,7 +156,7 @@ export class ChatlunaSearchAgent {
     this.logger.info(`[ChatlunaSearch] 开始搜索，模型: ${modelName}`)
 
     try {
-      const chatluna = (this.ctx as any).chatluna
+      const chatluna = this.ctx.chatluna
 
       // 如果 toolInfo 还没准备好，尝试重新获取
       if (!this.toolReady || !this.toolInfo) {

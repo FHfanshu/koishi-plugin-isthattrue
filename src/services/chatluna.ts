@@ -1,4 +1,4 @@
-import { Context, Service } from 'koishi'
+import { Context } from 'koishi'
 import { ChatRequest, ChatResponse } from '../types'
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { MessageContentComplex } from '@langchain/core/messages'
@@ -10,9 +10,21 @@ declare module 'koishi' {
   }
 }
 
+interface ChatlunaToolInfo {
+  createTool(options?: Record<string, unknown>): unknown
+}
+
+interface ChaflunaPlatform {
+  getTools(): { value?: string[] }
+  getTool(name: string): ChatlunaToolInfo | undefined
+  registerTool(name: string, options: { createTool(): unknown; selector(): boolean }): (() => void) | undefined
+}
+
 interface ChatlunaService {
   // 创建模型实例（无需 room）
   createChatModel(fullModelName: string): Promise<{ value: ChatModel | undefined }>
+  // 工具平台（由 chatluna-search-service 等扩展注册）
+  platform?: ChaflunaPlatform
 }
 
 interface ChatModel {
@@ -28,6 +40,8 @@ interface ChatModel {
  */
 export class ChatlunaAdapter {
   private logger
+  // 串行化代理环境变量操作，避免并发请求互相干扰
+  private static proxyMutex: Promise<void> = Promise.resolve()
 
   constructor(private ctx: Context, private config?: any) {
     this.logger = ctx.logger('isthattrue')
@@ -41,6 +55,32 @@ export class ChatlunaAdapter {
   }
 
   /**
+   * 在临时移除系统代理的环境中串行执行 fn，防止并发请求污染全局 env
+   */
+  private runWithProxyBypass<T>(fn: () => Promise<T>): Promise<T> {
+    const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+    let release!: () => void
+    const slot = new Promise<void>(resolve => { release = resolve })
+    // 将当前任务追加到 mutex 链末尾
+    const task = ChatlunaAdapter.proxyMutex.then(async () => {
+      const saved: Record<string, string | undefined> = {}
+      proxyVars.forEach(v => { saved[v] = process.env[v]; delete process.env[v] })
+      this.logger.debug('已临时移除系统代理环境变量')
+      try {
+        return await fn()
+      } finally {
+        proxyVars.forEach(v => {
+          if (saved[v] !== undefined) process.env[v] = saved[v]
+        })
+        release()
+      }
+    })
+    // 更新 mutex 指向当前 slot，下一个等待者会在 release() 后继续
+    ChatlunaAdapter.proxyMutex = slot
+    return task
+  }
+
+  /**
    * 发送聊天请求
    */
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -48,32 +88,29 @@ export class ChatlunaAdapter {
       throw new Error('Chatluna 服务不可用，请确保已安装并启用 koishi-plugin-chatluna')
     }
 
+    if (this.config?.bypassProxy) {
+      return this.runWithProxyBypass(() => this.doChat(request))
+    }
+
+    // 打印当前环境代理信息（非代理绕过模式）
+    if (this.config?.logLLMDetails) {
+      const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+      const activeProxies = proxyVars.filter(v => process.env[v]).map(v => `${v}=${process.env[v]}`)
+      if (activeProxies.length > 0) {
+        this.logger.debug(`当前环境代理: ${activeProxies.join(', ')}`)
+      }
+    }
+
+    return this.doChat(request)
+  }
+
+  /**
+   * 实际发送请求（不处理代理）
+   */
+  private async doChat(request: ChatRequest): Promise<ChatResponse> {
     const startTime = Date.now()
-    let originalProxies: Record<string, string | undefined> = {}
 
     try {
-      // 1. 处理代理绕过
-      if (this.config?.bypassProxy) {
-        const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        proxyVars.forEach(v => {
-          originalProxies[v] = process.env[v]
-          delete process.env[v]
-        })
-        this.logger.debug('已临时移除系统代理环境变量')
-      } else {
-        // 打印当前环境变量中的代理信息
-        const proxyVars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        const activeProxies = proxyVars
-          .filter(v => process.env[v])
-          .map(v => `${v}=${process.env[v]}`)
-
-        if (activeProxies.length > 0) {
-          this.logger.debug(`当前环境代理: ${activeProxies.join(', ')}`)
-        } else {
-          this.logger.debug('当前环境未检测到系统代理环境变量')
-        }
-      }
-
       // 使用 createChatModel 创建模型实例（无需 room）
       const modelRef = await this.ctx.chatluna.createChatModel(request.model)
       const model = modelRef.value
@@ -121,15 +158,6 @@ export class ChatlunaAdapter {
         temperature: 0.3, // 低温度以减少幻觉
       })
 
-      // 恢复代理环境变量
-      if (this.config?.bypassProxy) {
-        Object.keys(originalProxies).forEach(v => {
-          if (originalProxies[v] !== undefined) {
-            process.env[v] = originalProxies[v]
-          }
-        })
-      }
-
       const processingTime = Date.now() - startTime
       this.logger.debug(`Chatluna 请求完成，耗时 ${processingTime}ms`)
 
@@ -149,14 +177,6 @@ export class ChatlunaAdapter {
         sources: this.extractSources(content),
       }
     } catch (error) {
-      // 发生错误也要恢复环境变量
-      if (this.config?.bypassProxy) {
-        Object.keys(originalProxies).forEach(v => {
-          if (originalProxies[v] !== undefined) {
-            process.env[v] = originalProxies[v]
-          }
-        })
-      }
       this.logger.error('Chatluna 请求失败:', error)
       throw error
     }

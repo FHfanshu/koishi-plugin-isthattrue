@@ -3,6 +3,7 @@ import { Config } from './config'
 import { MainAgent } from './agents'
 import { MessageParser } from './services/messageParser'
 import { ChatlunaAdapter } from './services/chatluna'
+import { registerTofTool } from './services/tofTool'
 import { formatVerificationOutput, formatForwardMessages } from './utils/prompts'
 import { Verdict } from './types'
 
@@ -38,6 +39,10 @@ export { Config } from './config'
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger('isthattrue')
   const messageParser = new MessageParser(ctx)
+
+  // 一次性创建主 Agent，避免每次请求重启 2s initTool 延迟
+  const mainAgent = new MainAgent(ctx, config)
+  registerTofTool(ctx, config, mainAgent)
 
   // 注册 tof 指令
   ctx.command('tof', '验证消息的真实性')
@@ -83,7 +88,6 @@ export function apply(ctx: Context, config: Config) {
         }
 
         // 5. 执行验证 (使用主控 Agent，内部处理图片)
-        const mainAgent = new MainAgent(ctx, config)
         const result = await mainAgent.verify(content)
 
         // 用于输出的文本（优先使用原始文本，纯图片时显示"图片内容"）
@@ -203,7 +207,6 @@ export function apply(ctx: Context, config: Config) {
       await session.send('🔍 快速验证中...')
 
       try {
-        const mainAgent = new MainAgent(ctx, config)
         const result = await mainAgent.verify({ text, images: [], hasQuote: false })
 
         const verdictEmoji: Record<string, string> = {
