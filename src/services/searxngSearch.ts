@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import { Config } from '../config'
 import type { DeepSearchQuery, SearchResult } from '../types'
 import { resolveProxyAgent } from '../utils/http'
+import { resolveSearXNGApiBase } from '../utils/apiConfig'
 
 interface SearXNGResultItem {
   title?: string
@@ -40,7 +41,7 @@ export class SearXNGSearchService {
       }
     }
 
-    const apiBase = (this.config.deepSearch.searXNGApiBase || '').trim() || 'http://127.0.0.1:8080'
+    const apiBase = resolveSearXNGApiBase(this.config)
     const endpoint = this.normalizeEndpoint(apiBase)
     const engines = query.searxngConfig?.engines || this.config.deepSearch.searXNGEngines || 'google,bing,duckduckgo'
     const categories = query.searxngConfig?.categories || this.config.deepSearch.searXNGCategories || 'general'

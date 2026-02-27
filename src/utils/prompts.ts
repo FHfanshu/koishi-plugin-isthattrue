@@ -113,7 +113,7 @@ export const DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT = `你是 DeepSearch 主控模
 }
 \`\`\`
 
-可选 provider: grok | gemini | chatgpt | deepseek | ollama
+可选 provider: grok | gemini | chatgpt | ollama
 可选 useTool: web_search | browser | searxng | ollama_search`
 
 /**

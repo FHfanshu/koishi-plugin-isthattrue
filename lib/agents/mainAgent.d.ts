@@ -13,7 +13,6 @@ export declare class MainAgent {
     private verifyAgent;
     private chatluna;
     private messageParser;
-    private tavilySearchAgent;
     private logger;
     constructor(ctx: Context, config: Config);
     /**

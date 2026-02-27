@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import { Config } from '../config'
 import type { SearchResult } from '../types'
 import { resolveProxyAgent } from '../utils/http'
+import { resolveOllamaApiBase, resolveOllamaApiKey } from '../utils/apiConfig'
 
 interface OllamaSearchItem {
   title?: string
@@ -104,16 +105,16 @@ export class OllamaSearchService {
   } {
     if (scope === 'deepsearch') {
       return {
-        apiBase: (this.config.deepSearch.ollamaSearchApiBase || '').trim() || 'https://ollama.com/api/web_search',
-        apiKey: (this.config.deepSearch.ollamaSearchApiKey || '').trim() || (process.env.OLLAMA_API_KEY || '').trim(),
+        apiBase: resolveOllamaApiBase(this.config, 'deepsearch'),
+        apiKey: resolveOllamaApiKey(this.config, 'deepsearch'),
         maxResults: Math.max(1, Math.min(this.config.deepSearch.ollamaSearchMaxResults || 5, 10)),
         timeout: Math.max(3000, Math.min(this.config.deepSearch.ollamaSearchTimeout || 15000, 120000)),
       }
     }
 
     return {
-      apiBase: (this.config.agent.ollamaSearchApiBase || '').trim() || 'https://ollama.com/api/web_search',
-      apiKey: (this.config.agent.ollamaSearchApiKey || '').trim() || (process.env.OLLAMA_API_KEY || '').trim(),
+      apiBase: resolveOllamaApiBase(this.config, 'agent'),
+      apiKey: resolveOllamaApiKey(this.config, 'agent'),
       maxResults: Math.max(1, Math.min(this.config.agent.ollamaSearchMaxResults || 5, 10)),
       timeout: Math.max(3000, Math.min(this.config.agent.ollamaSearchTimeout || 15000, 120000)),
     }

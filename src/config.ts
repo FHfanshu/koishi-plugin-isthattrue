@@ -8,8 +8,6 @@ export interface TofConfig {
   model: string
   /** 搜索模型 */
   searchModel: string
-  /** TavilyAPI Key（可选，用于补充搜索） */
-  tavilyApiKey: string
   /** Chatluna Search 使用的模型 */
   chatlunaSearchModel: string
   /** 启用 Chatluna 搜索集成 */
@@ -90,8 +88,6 @@ export interface AgentToolConfig {
   searchUseGemini: boolean
   /** 启用 ChatGPT 源 */
   searchUseChatgpt: boolean
-  /** 启用 DeepSeek 源 */
-  searchUseDeepseek: boolean
   /** 启用 Ollama Search 源 */
   searchUseOllama: boolean
   /** Grok 模型 */
@@ -100,8 +96,6 @@ export interface AgentToolConfig {
   geminiModel: string
   /** ChatGPT 模型 */
   chatgptModel: string
-  /** DeepSeek 模型 */
-  deepseekModel: string
   /** Ollama Search API 地址 */
   ollamaSearchApiBase: string
   /** Ollama Search API Key（可选） */
@@ -127,6 +121,14 @@ export interface AgentToolConfig {
 export interface DeepSearchConfig {
   /** 是否启用 DeepSearch 模式（主流程与工具注册） */
   enable: boolean
+  /** 是否启用 DeepSearch 异步任务模式（deep_search 的 submit/status/result） */
+  asyncEnable: boolean
+  /** DeepSearch 异步任务最大并发 worker 数 */
+  asyncMaxWorkers: number
+  /** DeepSearch 异步任务过期时间（毫秒） */
+  asyncTaskTtlMs: number
+  /** DeepSearch 异步任务队列上限（包含运行中与排队中任务） */
+  asyncMaxQueuedTasks: number
   /** 主控模型 */
   controllerModel: string
   /** 最大迭代轮数 */
@@ -143,8 +145,6 @@ export interface DeepSearchConfig {
   searchUseGemini: boolean
   /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
   searchUseChatgpt: boolean
-  /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
-  searchUseDeepseek: boolean
   /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
   searchUseOllama: boolean
   /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
@@ -153,8 +153,6 @@ export interface DeepSearchConfig {
   geminiModel: string
   /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
   chatgptModel: string
-  /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
-  deepseekModel: string
   /** Ollama Search API 地址 */
   ollamaSearchApiBase: string
   /** Ollama Search API Key（可选） */
@@ -180,9 +178,26 @@ export interface DeepSearchConfig {
 }
 
 /**
+ * API Key / Base URL 统一配置
+ * 建议新用户优先在这里集中填写
+ */
+export interface ApiConfig {
+  /** 统一 API 表格配置：[来源, API Key, Base URL, 是否启用] */
+  apiKeys: [string, string, string, boolean][]
+  /** 统一 Ollama Search API Base URL（可被 agent/deepSearch 覆盖） */
+  ollamaSearchApiBase: string
+  /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
+  ollamaSearchApiKey: string
+  /** 统一 SearXNG Base URL（可被 deepSearch.searXNGApiBase 覆盖） */
+  searXNGApiBase: string
+}
+
+/**
  * 插件配置 Schema
  */
 export interface Config {
+  /** API Key / Base URL 统一配置 */
+  api: ApiConfig
   /** Tof 命令配置 */
   tof: TofConfig
   /** Agent 工具配置 */
@@ -212,10 +227,6 @@ const tofConfigSchema = Schema.object({
 }).description('基础设置')
 
 const tofSearchSchema = Schema.object({
-  tavilyApiKey: Schema.string()
-    .default('')
-    .role('secret')
-    .description('Tavily API Key (可选，用于补充搜索)'),
   chatlunaSearchModel: Schema.dynamic('model')
     .default('')
     .description('Chatluna Search 使用的模型 (可选；chatluna-search-service 不稳定时可留空并使用 fact_check 工具替代)'),
@@ -311,43 +322,46 @@ const agentToolSchema = Schema.object({
     .max(120000)
     .default(15000)
     .description('Gemini 快速搜索超时（毫秒）'),
+}).description('Fact Check 工具')
+
+const agentContextInjectionSchema = Schema.object({
   appendChatlunaSearchContext: Schema.boolean()
     .default(false)
-    .description('为 fact_check 工具追加 Chatluna Search Service 上下文（可选）'),
+    .description('为 fact_check 输出追加 Chatluna Search 上下文（仅附加参考，不改变最终判定流程）'),
   chatlunaSearchContextTimeout: Schema.number()
     .min(3000)
     .max(120000)
     .default(12000)
-    .description('追加 Chatluna Search 上下文超时（毫秒）'),
+    .description('Chatluna Search 上下文查询超时（毫秒）；超时仅跳过附加上下文'),
   chatlunaSearchContextMaxChars: Schema.number()
     .min(200)
     .max(8000)
     .default(1200)
-    .description('追加 Chatluna Search 上下文最大字符数'),
+    .description('附加的 Chatluna Search 上下文最大字符数（防止输出过长）'),
   chatlunaSearchContextMaxSources: Schema.number()
     .min(1)
     .max(20)
     .default(5)
-    .description('追加 Chatluna Search 上下文来源数量上限'),
+    .description('附加的 Chatluna Search 来源数量上限'),
   appendOllamaSearchContext: Schema.boolean()
     .default(false)
-    .description('为 fact_check 工具追加 Ollama Search 上下文（可选）'),
+    .description('为 fact_check 输出追加 Ollama Search 上下文（仅附加参考，不改变最终判定流程）'),
   ollamaSearchContextTimeout: Schema.number()
     .min(3000)
     .max(120000)
     .default(12000)
-    .description('追加 Ollama Search 上下文超时（毫秒）'),
+    .description('Ollama Search 上下文查询超时（毫秒）；超时仅跳过附加上下文'),
   ollamaSearchContextMaxChars: Schema.number()
     .min(200)
     .max(8000)
     .default(1200)
-    .description('追加 Ollama Search 上下文最大字符数'),
+    .description('附加的 Ollama Search 上下文最大字符数（防止输出过长）'),
   ollamaSearchContextMaxSources: Schema.number()
     .min(1)
     .max(20)
     .default(5)
-    .description('追加 Ollama Search 上下文来源数量上限'),
-}).description('Fact Check 工具')
+    .description('附加的 Ollama Search 来源数量上限'),
+}).description('搜索源上下文注入')
 
 const agentMultiSourceSchema = Schema.object({
   enableMultiSourceSearch: Schema.boolean()
@@ -362,9 +376,6 @@ const agentMultiSourceSchema = Schema.object({
   searchUseChatgpt: Schema.boolean()
     .default(false)
     .description('多源搜索包含 ChatGPT（需模型支持搜索工具）'),
-  searchUseDeepseek: Schema.boolean()
-    .default(false)
-    .description('多源搜索包含 DeepSeek（需模型支持搜索工具）'),
   searchUseOllama: Schema.boolean()
     .default(false)
     .description('多源搜索包含 Ollama Search'),
@@ -377,16 +388,13 @@ const agentMultiSourceSchema = Schema.object({
   chatgptModel: Schema.dynamic('model')
     .default('')
     .description('ChatGPT 来源模型（留空则跳过 ChatGPT 来源）'),
-  deepseekModel: Schema.dynamic('model')
-    .default('')
-    .description('DeepSeek 来源模型（留空则跳过 DeepSeek 来源）'),
   ollamaSearchApiBase: Schema.string()
     .default('https://ollama.com/api/web_search')
-    .description('Ollama Search API 地址（默认官方 API）'),
+    .description('Agent 专用 Ollama Search Base URL。留空时回退到 api.ollamaSearchApiBase（Docker 场景填 Koishi 容器可达地址）'),
   ollamaSearchApiKey: Schema.string()
     .default('')
     .role('secret')
-    .description('Ollama Search API Key（可选，私有/托管服务时需要）'),
+    .description('Agent 专用 Ollama Search API Key。留空时回退到 api.ollamaSearchApiKey，再回退环境变量 OLLAMA_API_KEY'),
   ollamaSearchMaxResults: Schema.number()
     .min(1)
     .max(10)
@@ -423,6 +431,24 @@ const deepSearchCoreSchema = Schema.object({
   enable: Schema.boolean()
     .default(false)
     .description('启用 DeepSearch 迭代搜索模式（同时注册 deep_search 工具）'),
+  asyncEnable: Schema.boolean()
+    .default(true)
+    .description('启用 DeepSearch 异步任务模式（在 deep_search 中使用 JSON action=submit/status/result）'),
+  asyncMaxWorkers: Schema.number()
+    .min(1)
+    .max(8)
+    .default(2)
+    .description('DeepSearch 异步任务 worker 并发数（默认保守值 2）'),
+  asyncTaskTtlMs: Schema.number()
+    .min(60000)
+    .max(86400000)
+    .default(600000)
+    .description('DeepSearch 异步任务过期时间（毫秒，默认 10 分钟）'),
+  asyncMaxQueuedTasks: Schema.number()
+    .min(1)
+    .max(1000)
+    .default(100)
+    .description('DeepSearch 异步任务队列上限（超出将拒绝新任务）'),
   controllerModel: Schema.dynamic('model')
     .default('google/gemini-3-flash')
     .description('DeepSearch 主控模型（用于规划、评估、综合）'),
@@ -460,9 +486,6 @@ const deepSearchLLMSourceSchema = Schema.object({
   searchUseChatgpt: Schema.boolean()
     .default(false)
     .description('DeepSearch LLM 搜索源包含 ChatGPT'),
-  searchUseDeepseek: Schema.boolean()
-    .default(false)
-    .description('DeepSearch LLM 搜索源包含 DeepSeek'),
   searchUseOllama: Schema.boolean()
     .default(false)
     .description('DeepSearch 搜索源包含 Ollama Search'),
@@ -475,16 +498,13 @@ const deepSearchLLMSourceSchema = Schema.object({
   chatgptModel: Schema.dynamic('model')
     .default('')
     .description('ChatGPT 模型（留空回退 agent.chatgptModel/tof.searchModel）'),
-  deepseekModel: Schema.dynamic('model')
-    .default('')
-    .description('DeepSeek 模型（留空回退 agent.deepseekModel/tof.searchModel）'),
   ollamaSearchApiBase: Schema.string()
     .default('https://ollama.com/api/web_search')
-    .description('Ollama Search API 地址'),
+    .description('DeepSearch 专用 Ollama Search Base URL。留空时回退到 api.ollamaSearchApiBase（Docker 场景填 Koishi 容器可达地址）'),
   ollamaSearchApiKey: Schema.string()
     .default('')
     .role('secret')
-    .description('Ollama Search API Key（可选）'),
+    .description('DeepSearch 专用 Ollama Search API Key。留空时回退到 api.ollamaSearchApiKey，再回退环境变量 OLLAMA_API_KEY'),
   ollamaSearchMaxResults: Schema.number()
     .min(1)
     .max(10)
@@ -512,7 +532,7 @@ const deepSearchSearXNGSchema = Schema.object({
     .description('启用 SearXNG 元搜索作为 DeepSearch 的额外来源'),
   searXNGApiBase: Schema.string()
     .default('http://127.0.0.1:8080')
-    .description('SearXNG API 基础地址（例如 http://127.0.0.1:8080）'),
+    .description('DeepSearch 专用 SearXNG Base URL。留空时回退到 api.searXNGApiBase；需保证 /search?format=json 返回 200'),
   searXNGEngines: Schema.string()
     .default('google,bing,duckduckgo')
     .description('SearXNG engines 参数，逗号分隔'),
@@ -526,23 +546,55 @@ const deepSearchSearXNGSchema = Schema.object({
     .description('SearXNG 返回结果数'),
 }).description('SearXNG 搜索集成')
 
+const apiUnifiedSchema = Schema.object({
+  apiKeys: Schema.array(
+    Schema.tuple([
+      Schema.union([
+        Schema.const('ollama').description('Ollama Search'),
+        Schema.const('searxng').description('SearXNG'),
+      ]).description('来源'),
+      Schema.string().role('secret').description('API Key（可留空）'),
+      Schema.string().description('Base URL（可留空）'),
+      Schema.boolean().default(true).description('是否启用'),
+    ])
+  )
+    .role('table')
+    .default([
+      ['ollama', '', 'https://ollama.com/api/web_search', true],
+      ['searxng', '', 'http://127.0.0.1:8080', true],
+    ])
+    .description('统一 API 表格配置（优先读取）。同来源取第一条已启用记录'),
+  ollamaSearchApiBase: Schema.string()
+    .default('https://ollama.com/api/web_search')
+    .description('统一 Ollama Search Base URL（兼容字段）。建议优先使用上方 apiKeys 表格；agent/deepSearch 同名字段可单独覆盖'),
+  ollamaSearchApiKey: Schema.string()
+    .default('')
+    .role('secret')
+    .description('统一 Ollama Search API Key（兼容字段）。建议优先使用上方 apiKeys 表格；agent/deepSearch 同名字段可单独覆盖'),
+  searXNGApiBase: Schema.string()
+    .default('http://127.0.0.1:8080')
+    .description('统一 SearXNG Base URL（兼容字段）。建议优先使用上方 apiKeys 表格；deepSearch.searXNGApiBase 可单独覆盖'),
+}).description('API Key / Base URL 对照表')
+
 export const Config = Schema.intersect([
   Schema.object({
-    tof: Schema.intersect([
-      tofConfigSchema,
-      tofSearchSchema,
-      tofOutputSchema,
-    ]).description('Tof 命令配置'),
+    api: apiUnifiedSchema,
     agent: Schema.intersect([
       agentToolSchema,
+      agentContextInjectionSchema,
       agentMultiSourceSchema,
-    ]).description('Agent 工具配置'),
+    ]).description('FactCheck 基础'),
     deepSearch: Schema.intersect([
       deepSearchCoreSchema,
       deepSearchLLMSourceSchema,
       deepSearchChatlunaIntegrationSchema,
       deepSearchSearXNGSchema,
-    ]).description('DeepSearch 配置'),
+    ]).description('DeepSearch'),
+    tof: Schema.intersect([
+      tofConfigSchema,
+      tofSearchSchema,
+      tofOutputSchema,
+    ]).description('Tof（可选）'),
   }),
   Schema.object({
     tof: tofDebugSchema,

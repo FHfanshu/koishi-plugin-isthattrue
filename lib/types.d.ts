@@ -103,7 +103,7 @@ export interface ChatResponse {
 /**
  * DeepSearch 来源提供方
  */
-export type DeepSearchProvider = 'grok' | 'gemini' | 'chatgpt' | 'deepseek' | 'ollama';
+export type DeepSearchProvider = 'grok' | 'gemini' | 'chatgpt' | 'ollama';
 /**
  * DeepSearch 可调用工具
  */

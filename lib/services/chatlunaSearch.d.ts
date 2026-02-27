@@ -21,6 +21,7 @@ export declare class ChatlunaSearchAgent {
     private normalizeResultItems;
     private normalizeUrl;
     private truncate;
+    private withTimeout;
     private refreshToolInfo;
     private initTool;
     /**

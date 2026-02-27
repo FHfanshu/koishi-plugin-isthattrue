@@ -7,8 +7,6 @@ export interface TofConfig {
     model: string;
     /** 搜索模型 */
     searchModel: string;
-    /** TavilyAPI Key（可选，用于补充搜索） */
-    tavilyApiKey: string;
     /** Chatluna Search 使用的模型 */
     chatlunaSearchModel: string;
     /** 启用 Chatluna 搜索集成 */
@@ -88,8 +86,6 @@ export interface AgentToolConfig {
     searchUseGemini: boolean;
     /** 启用 ChatGPT 源 */
     searchUseChatgpt: boolean;
-    /** 启用 DeepSeek 源 */
-    searchUseDeepseek: boolean;
     /** 启用 Ollama Search 源 */
     searchUseOllama: boolean;
     /** Grok 模型 */
@@ -98,8 +94,6 @@ export interface AgentToolConfig {
     geminiModel: string;
     /** ChatGPT 模型 */
     chatgptModel: string;
-    /** DeepSeek 模型 */
-    deepseekModel: string;
     /** Ollama Search API 地址 */
     ollamaSearchApiBase: string;
     /** Ollama Search API Key（可选） */
@@ -124,6 +118,14 @@ export interface AgentToolConfig {
 export interface DeepSearchConfig {
     /** 是否启用 DeepSearch 模式（主流程与工具注册） */
     enable: boolean;
+    /** 是否启用 DeepSearch 异步任务模式（deep_search 的 submit/status/result） */
+    asyncEnable: boolean;
+    /** DeepSearch 异步任务最大并发 worker 数 */
+    asyncMaxWorkers: number;
+    /** DeepSearch 异步任务过期时间（毫秒） */
+    asyncTaskTtlMs: number;
+    /** DeepSearch 异步任务队列上限（包含运行中与排队中任务） */
+    asyncMaxQueuedTasks: number;
     /** 主控模型 */
     controllerModel: string;
     /** 最大迭代轮数 */
@@ -140,8 +142,6 @@ export interface DeepSearchConfig {
     searchUseGemini: boolean;
     /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
     searchUseChatgpt: boolean;
-    /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
-    searchUseDeepseek: boolean;
     /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
     searchUseOllama: boolean;
     /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
@@ -150,8 +150,6 @@ export interface DeepSearchConfig {
     geminiModel: string;
     /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
     chatgptModel: string;
-    /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
-    deepseekModel: string;
     /** Ollama Search API 地址 */
     ollamaSearchApiBase: string;
     /** Ollama Search API Key（可选） */
@@ -176,9 +174,25 @@ export interface DeepSearchConfig {
     searXNGNumResults: number;
 }
 /**
+ * API Key / Base URL 统一配置
+ * 建议新用户优先在这里集中填写
+ */
+export interface ApiConfig {
+    /** 统一 API 表格配置：[来源, API Key, Base URL, 是否启用] */
+    apiKeys: [string, string, string, boolean][];
+    /** 统一 Ollama Search API Base URL（可被 agent/deepSearch 覆盖） */
+    ollamaSearchApiBase: string;
+    /** 统一 Ollama Search API Key（可被 agent/deepSearch 覆盖） */
+    ollamaSearchApiKey: string;
+    /** 统一 SearXNG Base URL（可被 deepSearch.searXNGApiBase 覆盖） */
+    searXNGApiBase: string;
+}
+/**
  * 插件配置 Schema
  */
 export interface Config {
+    /** API Key / Base URL 统一配置 */
+    api: ApiConfig;
     /** Tof 命令配置 */
     tof: TofConfig;
     /** Agent 工具配置 */

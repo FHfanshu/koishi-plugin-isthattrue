@@ -7,8 +7,6 @@ import { DeepSearchController } from './deepSearchController'
 import { ChatlunaSearchAgent } from '../services/chatlunaSearch'
 import { ChatlunaAdapter } from '../services/chatluna'
 import { MessageParser } from '../services/messageParser'
-import { TavilySearchAgent } from '../services/tavily'
-import { injectCensorshipBypass } from '../utils/url'
 import { IMAGE_DESCRIPTION_PROMPT } from '../utils/prompts'
 
 /**
@@ -21,7 +19,6 @@ export class MainAgent {
   private verifyAgent: VerifyAgent
   private chatluna: ChatlunaAdapter
   private messageParser: MessageParser
-  private tavilySearchAgent: TavilySearchAgent
   private logger
 
   constructor(
@@ -37,7 +34,6 @@ export class MainAgent {
       maxImageBytes: 8 * 1024 * 1024,
       tofConfig: config.tof,
     })
-    this.tavilySearchAgent = new TavilySearchAgent(ctx, config)
     this.logger = ctx.logger('chatluna-fact-check')
   }
 
@@ -85,17 +81,11 @@ export class MainAgent {
         }
       }
 
-      // 对所有结果进行 URL 混淆处理
-      const processedResults = searchResults.map(r => ({
-        ...r,
-        findings: injectCensorshipBypass(r.findings)
-      }))
-
       // Phase 3: Gemini 综合判决 (传递原图)
       this.logger.info('[Phase 3] Gemini 判决中...')
       const finalResult = await this.verifyAgent.verify(
         content,
-        processedResults,
+        searchResults,
         imageBase64List
       )
 
@@ -152,7 +142,7 @@ export class MainAgent {
   }
 
   private async searchEvidenceLegacy(searchText: string): Promise<SearchResult[]> {
-    this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok + Tavily)...')
+    this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok)...')
 
     const searchTasks: Array<{ name: string; promise: Promise<SearchResult | null> }> = []
 
@@ -175,17 +165,6 @@ export class MainAgent {
         'GrokSearch'
       )
     })
-
-    if (this.tavilySearchAgent.isAvailable()) {
-      searchTasks.push({
-        name: 'TavilySearch',
-        promise: this.withTimeout(
-          this.tavilySearchAgent.search(searchText),
-          this.config.tof.timeout,
-          'TavilySearch'
-        )
-      })
-    }
 
     const results = await Promise.allSettled(searchTasks.map(t => t.promise))
 

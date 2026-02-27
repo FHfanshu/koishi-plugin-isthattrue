@@ -262,7 +262,6 @@ ${focus}
     if (this.config.deepSearch.searchUseGrok) providers.push('grok')
     if (this.config.deepSearch.searchUseGemini) providers.push('gemini')
     if (this.config.deepSearch.searchUseChatgpt) providers.push('chatgpt')
-    if (this.config.deepSearch.searchUseDeepseek) providers.push('deepseek')
     if (this.config.deepSearch.searchUseOllama) providers.push('ollama')
     return providers
   }
@@ -298,10 +297,6 @@ ${focus}
       case 'chatgpt':
         return this.config.deepSearch.chatgptModel?.trim()
           || this.config.agent.chatgptModel?.trim()
-          || fallback
-      case 'deepseek':
-        return this.config.deepSearch.deepseekModel?.trim()
-          || this.config.agent.deepseekModel?.trim()
           || fallback
       case 'ollama':
         return fallback
@@ -351,7 +346,7 @@ ${focus}
       return {
         agentId: 'deepsearch-model',
         perspective: `DeepSearch 模型搜索: ${query.focus}`,
-        findings: 'DeepSearch LLM 搜索源均已禁用，请开启至少一个来源（Grok/Gemini/ChatGPT/DeepSeek/Ollama）',
+        findings: 'DeepSearch LLM 搜索源均已禁用，请开启至少一个来源（Grok/Gemini/ChatGPT/Ollama）',
         sources: [],
         confidence: 0,
         failed: true,

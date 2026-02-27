@@ -11,7 +11,7 @@ import {
 } from '../utils/prompts'
 
 interface ToolSearchProvider {
-  key: 'grok' | 'gemini' | 'chatgpt' | 'deepseek' | 'ollama'
+  key: 'grok' | 'gemini' | 'chatgpt' | 'ollama'
   label: string
   model: string
 }
@@ -133,10 +133,6 @@ class FactCheckTool extends Tool {
       providers.push({ key: 'chatgpt', label: 'ChatGPTSearch', model: chatgptModel })
     }
 
-    const deepseekModel = this.config.agent.deepseekModel?.trim()
-    if (this.config.agent.searchUseDeepseek && deepseekModel) {
-      providers.push({ key: 'deepseek', label: 'DeepSeekSearch', model: deepseekModel })
-    }
     if (this.config.agent.searchUseOllama) {
       providers.push({
         key: 'ollama',
@@ -487,7 +483,7 @@ export function registerFactCheckTool(ctx: Context, config: Config) {
 
   const deepToolName = config.agent.name?.trim() || 'fact_check_deep'
   const deepToolDescription = config.agent.description?.trim()
-    || '用于 LLM 网络搜索（作为 chatluna-search 的 LLMSearch 替代）。输入待核查文本，返回多源搜索结果与来源链接（可配置 Grok/Gemini/ChatGPT/DeepSeek），由上层 Agent 自行判断。'
+    || '用于 LLM 网络搜索（作为 chatluna-search 的 LLMSearch 替代）。输入待核查文本，返回多源搜索结果与来源链接（可配置 Grok/Gemini/ChatGPT/Ollama），由上层 Agent 自行判断。'
   const quickToolName = config.agent.quickToolName?.trim() || 'fact_check'
   const quickToolDescription = config.agent.quickToolDescription?.trim()
     || '用于快速网络搜索（Gemini 单源）。输入待核查文本，快速返回来源与摘要，适合日常场景。'

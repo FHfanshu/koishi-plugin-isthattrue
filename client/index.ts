@@ -2,7 +2,7 @@ import { Context } from '@koishijs/client'
 import { computed, defineComponent, inject, onBeforeUnmount, onMounted, type ComputedRef, watch, h } from 'vue'
 
 type NavSection = {
-  key: 'basic' | 'search' | 'output' | 'tool' | 'multi' | 'deep-search' | 'deep-llm' | 'deep-chatluna' | 'deep-searxng' | 'debug'
+  key: 'api-key-table' | 'factcheck-basic' | 'context-injection' | 'deep-search' | 'deep-llm' | 'tof-optional' | 'debug-troubleshooting'
   title: string
 }
 
@@ -20,18 +20,16 @@ const PLUGIN_NAMES = new Set([
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: 'Tof 命令',
+    title: 'API 配置',
     sections: [
-      { key: 'basic', title: '基础设置' },
-      { key: 'search', title: '搜索集成' },
-      { key: 'output', title: '输出格式' },
+      { key: 'api-key-table', title: 'API Key / Base URL 对照表' },
     ],
   },
   {
-    title: 'Agent 工具',
+    title: 'FactCheck',
     sections: [
-      { key: 'tool', title: 'Fact Check 工具' },
-      { key: 'multi', title: '多源搜索配置' },
+      { key: 'factcheck-basic', title: 'FactCheck 基础' },
+      { key: 'context-injection', title: '搜索源上下文注入' },
     ],
   },
   {
@@ -39,19 +37,32 @@ const NAV_GROUPS: NavGroup[] = [
     sections: [
       { key: 'deep-search', title: 'DeepSearch 迭代搜索' },
       { key: 'deep-llm', title: 'LLM 搜索源' },
-      { key: 'deep-chatluna', title: 'Chatluna 搜索集成' },
-      { key: 'deep-searxng', title: 'SearXNG 搜索集成' },
     ],
   },
   {
-    title: '调试',
+    title: 'Tof',
     sections: [
-      { key: 'debug', title: '调试' },
+      { key: 'tof-optional', title: 'Tof（可选）' },
+    ],
+  },
+  {
+    title: '调试/兼容',
+    sections: [
+      { key: 'debug-troubleshooting', title: '调试与排障' },
     ],
   },
 ] 
 
 const NAV_SECTIONS: NavSection[] = NAV_GROUPS.flatMap((group) => group.sections)
+const SECTION_TITLE_ALIASES: Record<NavSection['key'], string[]> = {
+  'factcheck-basic': ['FactCheck 基础', 'Fact Check 工具', 'Agent 工具配置'],
+  'context-injection': ['搜索源上下文注入', '多源搜索配置', 'Chatluna 搜索集成', 'SearXNG 搜索集成'],
+  'api-key-table': ['API Key / Base URL 对照表', 'API Key / Base URL 统一配置', '统一配置'],
+  'deep-search': ['DeepSearch 迭代搜索', 'DeepSearch 配置', 'DeepSearch'],
+  'deep-llm': ['LLM 搜索源'],
+  'tof-optional': ['Tof（可选）', 'Tof 命令配置', '基础设置', '输出格式'],
+  'debug-troubleshooting': ['调试与排障', '调试'],
+}
 
 const STYLE_ID = 'isthattrue-nav-style'
 
@@ -140,15 +151,27 @@ function getSectionNodes() {
   ))
 }
 
-function findHeaderByTitle(title: string) {
-  const targetTitle = normalizeText(title)
+function findHeaderBySection(section: NavSection) {
+  const targets = [section.title, ...(SECTION_TITLE_ALIASES[section.key] || [])]
+    .map(item => normalizeText(item))
+    .filter(Boolean)
   const headers = getSectionNodes()
   for (const header of headers) {
     const text = normalizeText(header.textContent || '')
     if (!text) continue
-    if (text.includes(targetTitle)) return header
+    if (targets.some(target => text.includes(target))) return header
   }
   return null
+}
+
+function matchSectionByHeaderText(text: string): NavSection | undefined {
+  const normalized = normalizeText(text)
+  return NAV_SECTIONS.find((section) => {
+    const candidates = [section.title, ...(SECTION_TITLE_ALIASES[section.key] || [])]
+      .map(item => normalizeText(item))
+      .filter(Boolean)
+    return candidates.some(candidate => normalized.includes(candidate))
+  })
 }
 
 function mountFloatingNav() {
@@ -185,7 +208,7 @@ function mountFloatingNav() {
       button.className = 'isthattrue-nav-item'
       button.textContent = section.title
       button.addEventListener('click', () => {
-        const target = findHeaderByTitle(section.title)
+        const target = findHeaderBySection(section)
         if (target) {
           target.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }
@@ -239,7 +262,7 @@ function mountFloatingNav() {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue
         const text = (entry.target.textContent || '').trim()
-        const section = NAV_SECTIONS.find(item => text.includes(item.title))
+        const section = matchSectionByHeaderText(text)
         if (!section) continue
         for (const item of itemMap.values()) item.classList.remove('active')
         itemMap.get(section.key)?.classList.add('active')
@@ -253,8 +276,8 @@ function mountFloatingNav() {
 
     const headers = getSectionNodes()
     for (const node of headers) {
-      const text = normalizeText(node.textContent || '')
-      if (NAV_SECTIONS.some(section => text.includes(normalizeText(section.title)))) {
+      const text = node.textContent || ''
+      if (matchSectionByHeaderText(text)) {
         observer.observe(node)
       }
     }

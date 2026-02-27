@@ -79,6 +79,20 @@ export class ChatlunaSearchAgent {
     return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
   }
 
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | null = null
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} 超时`)), timeoutMs)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   private async refreshToolInfo(): Promise<boolean> {
     const chatluna = (this.ctx as any).chatluna
     if (!chatluna?.platform) {
@@ -214,6 +228,7 @@ export class ChatlunaSearchAgent {
     const startTime = Date.now()
     const modelName = this.config.tof.chatlunaSearchModel
     const shortModelName = modelName.includes('/') ? modelName.split('/').pop()! : modelName
+    const perQueryTimeout = Math.max(3000, Math.min(this.config.tof.timeout || 60000, 120000))
     this.logger.info(`[ChatlunaSearch] 开始搜索，模型: ${modelName}`)
 
     try {
@@ -241,52 +256,57 @@ export class ChatlunaSearchAgent {
 
       // 并行执行所有关键词搜索
       const searchPromises = queries.map(async (q) => {
-        const searchTool = this.createSearchTool()
-        if (!searchTool) {
-          this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 创建搜索工具失败`)
-          return []
-        }
-
-        try {
-          this.logger.info(`[ChatlunaSearch] 正在搜索关键词: ${q}`)
-          let searchResult: any
-
-          if (typeof searchTool.invoke === 'function') {
-            searchResult = await searchTool.invoke(q)
-          } else if (typeof searchTool._call === 'function') {
-            searchResult = await searchTool._call(q, undefined, {})
-          } else {
-            throw new Error('搜索工具没有可用的调用方法')
-          }
-
-          const searchData = this.normalizeResultItems(searchResult)
-            .slice(0, MAX_RESULTS_PER_QUERY)
-
-          return searchData.map(item => ({ ...item, searchQuery: q }))
-        } catch (err) {
-          this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 搜索失败，将尝试重建工具:`, err)
-          // 工具实例异常时重建后重试一次
-          const recreatedTool = this.createSearchTool()
-          if (!recreatedTool) {
+        return this.withTimeout((async () => {
+          const searchTool = this.createSearchTool()
+          if (!searchTool) {
+            this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 创建搜索工具失败`)
             return []
           }
+
           try {
-            let retryResult: any
-            if (typeof recreatedTool.invoke === 'function') {
-              retryResult = await recreatedTool.invoke(q)
-            } else if (typeof recreatedTool._call === 'function') {
-              retryResult = await recreatedTool._call(q, undefined, {})
+            this.logger.info(`[ChatlunaSearch] 正在搜索关键词: ${q}`)
+            let searchResult: any
+
+            if (typeof searchTool.invoke === 'function') {
+              searchResult = await searchTool.invoke(q)
+            } else if (typeof searchTool._call === 'function') {
+              searchResult = await searchTool._call(q, undefined, {})
             } else {
-              throw new Error('重建后的搜索工具没有可用调用方法')
+              throw new Error('搜索工具没有可用的调用方法')
             }
-            const retryData = this.normalizeResultItems(retryResult)
+
+            const searchData = this.normalizeResultItems(searchResult)
               .slice(0, MAX_RESULTS_PER_QUERY)
-            return retryData.map(item => ({ ...item, searchQuery: q }))
-          } catch (retryErr) {
-            this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 重试失败:`, retryErr)
-            return []
+
+            return searchData.map(item => ({ ...item, searchQuery: q }))
+          } catch (err) {
+            this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 搜索失败，将尝试重建工具:`, err)
+            const recreatedTool = this.createSearchTool()
+            if (!recreatedTool) {
+              return []
+            }
+            try {
+              let retryResult: any
+              if (typeof recreatedTool.invoke === 'function') {
+                retryResult = await recreatedTool.invoke(q)
+              } else if (typeof recreatedTool._call === 'function') {
+                retryResult = await recreatedTool._call(q, undefined, {})
+              } else {
+                throw new Error('重建后的搜索工具没有可用调用方法')
+              }
+              const retryData = this.normalizeResultItems(retryResult)
+                .slice(0, MAX_RESULTS_PER_QUERY)
+              return retryData.map(item => ({ ...item, searchQuery: q }))
+            } catch (retryErr) {
+              this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 重试失败:`, retryErr)
+              return []
+            }
           }
-        }
+        })(), perQueryTimeout, `ChatlunaSearch(${q})`)
+          .catch((err) => {
+            this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 超时/失败: ${(err as Error).message}`)
+            return []
+          })
       })
 
       // 等待所有搜索完成

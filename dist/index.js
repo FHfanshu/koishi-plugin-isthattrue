@@ -1,45 +1,55 @@
-import { defineComponent as M, inject as T, computed as N, onMounted as A, watch as I, onBeforeUnmount as z, h as D } from "vue";
-const F = /* @__PURE__ */ new Set([
+import { defineComponent as I, inject as M, computed as A, onMounted as N, watch as B, onBeforeUnmount as D, h as F } from "vue";
+const z = /* @__PURE__ */ new Set([
   "isthattrue",
   "chatluna-fact-check",
   "koishi-plugin-isthattrue",
   "koishi-plugin-chatluna-fact-check"
 ]), C = [
   {
-    title: "Tof 命令",
+    title: "API 配置",
     sections: [
-      { key: "basic", title: "基础设置" },
-      { key: "search", title: "搜索集成" },
-      { key: "output", title: "输出格式" }
+      { key: "api-key-table", title: "API Key / Base URL 对照表" }
     ]
   },
   {
-    title: "Agent 工具",
+    title: "FactCheck",
     sections: [
-      { key: "tool", title: "Fact Check 工具" },
-      { key: "multi", title: "多源搜索配置" }
+      { key: "factcheck-basic", title: "FactCheck 基础" },
+      { key: "context-injection", title: "搜索源上下文注入" }
     ]
   },
   {
     title: "DeepSearch",
     sections: [
       { key: "deep-search", title: "DeepSearch 迭代搜索" },
-      { key: "deep-llm", title: "LLM 搜索源" },
-      { key: "deep-chatluna", title: "Chatluna 搜索集成" },
-      { key: "deep-searxng", title: "SearXNG 搜索集成" }
+      { key: "deep-llm", title: "LLM 搜索源" }
     ]
   },
   {
-    title: "调试",
+    title: "Tof",
     sections: [
-      { key: "debug", title: "调试" }
+      { key: "tof-optional", title: "Tof（可选）" }
+    ]
+  },
+  {
+    title: "调试/兼容",
+    sections: [
+      { key: "debug-troubleshooting", title: "调试与排障" }
     ]
   }
-], w = C.flatMap((t) => t.sections), S = "isthattrue-nav-style";
-function O() {
-  if (document.getElementById(S)) return;
+], O = C.flatMap((t) => t.sections), E = {
+  "factcheck-basic": ["FactCheck 基础", "Fact Check 工具", "Agent 工具配置"],
+  "context-injection": ["搜索源上下文注入", "多源搜索配置", "Chatluna 搜索集成", "SearXNG 搜索集成"],
+  "api-key-table": ["API Key / Base URL 对照表", "API Key / Base URL 统一配置", "统一配置"],
+  "deep-search": ["DeepSearch 迭代搜索", "DeepSearch 配置", "DeepSearch"],
+  "deep-llm": ["LLM 搜索源"],
+  "tof-optional": ["Tof（可选）", "Tof 命令配置", "基础设置", "输出格式"],
+  "debug-troubleshooting": ["调试与排障", "调试"]
+}, L = "isthattrue-nav-style";
+function P() {
+  if (document.getElementById(L)) return;
   const t = document.createElement("style");
-  t.id = S, t.textContent = `
+  t.id = L, t.textContent = `
 .isthattrue-nav {
   position: fixed;
   top: 260px;
@@ -108,25 +118,29 @@ function O() {
 }
 `, document.head.appendChild(t);
 }
-function d(t) {
+function p(t) {
   return t.replace(/\s+/g, "").trim();
 }
-function E() {
+function w() {
   return Array.from(document.querySelectorAll(
     ".k-schema-section-title, .k-schema-header, h2.k-schema-header"
   ));
 }
-function q(t) {
-  const e = d(t), o = E();
-  for (const s of o) {
-    const l = d(s.textContent || "");
-    if (l && l.includes(e))
-      return s;
+function U(t) {
+  const e = [t.title, ...E[t.key] || []].map((r) => p(r)).filter(Boolean), n = w();
+  for (const r of n) {
+    const i = p(r.textContent || "");
+    if (i && e.some((d) => i.includes(d)))
+      return r;
   }
   return null;
 }
-function U() {
-  O();
+function S(t) {
+  const e = p(t);
+  return O.find((n) => [n.title, ...E[n.key] || []].map((i) => p(i)).filter(Boolean).some((i) => e.includes(i)));
+}
+function R() {
+  P();
   const t = document.querySelector(".isthattrue-nav");
   t == null || t.remove();
   const e = document.createElement("div");
@@ -137,43 +151,43 @@ function U() {
 </div>
 <div class="isthattrue-nav-body"></div>
 `, document.body.appendChild(e);
-  const o = e.querySelector(".isthattrue-nav-body"), s = e.querySelector(".isthattrue-nav-toggle"), l = e.querySelector(".isthattrue-nav-header"), p = /* @__PURE__ */ new Map();
-  for (const n of C) {
-    const r = document.createElement("div");
-    r.className = "isthattrue-nav-group", r.textContent = n.title, o.appendChild(r);
-    for (const i of n.sections) {
-      const a = document.createElement("button");
-      a.type = "button", a.className = "isthattrue-nav-item", a.textContent = i.title, a.addEventListener("click", () => {
-        const u = q(i.title);
+  const n = e.querySelector(".isthattrue-nav-body"), r = e.querySelector(".isthattrue-nav-toggle"), i = e.querySelector(".isthattrue-nav-header"), d = /* @__PURE__ */ new Map();
+  for (const o of C) {
+    const a = document.createElement("div");
+    a.className = "isthattrue-nav-group", a.textContent = o.title, n.appendChild(a);
+    for (const c of o.sections) {
+      const s = document.createElement("button");
+      s.type = "button", s.className = "isthattrue-nav-item", s.textContent = c.title, s.addEventListener("click", () => {
+        const u = U(c);
         u && u.scrollIntoView({ behavior: "smooth", block: "start" });
-      }), o.appendChild(a), p.set(i.key, a);
+      }), n.appendChild(s), d.set(c.key, s);
     }
   }
-  s.addEventListener("click", (n) => {
-    n.stopPropagation();
-    const r = e.classList.toggle("collapsed");
-    s.textContent = r ? "⌃" : "⌄";
+  r.addEventListener("click", (o) => {
+    o.stopPropagation();
+    const a = e.classList.toggle("collapsed");
+    r.textContent = a ? "⌃" : "⌄";
   });
-  let g = 0, f = 0, x = 0, y = 0;
-  const h = (n) => {
-    const r = n.clientX - g, i = n.clientY - f, a = Math.max(0, y + i), u = Math.max(0, x - r);
-    e.style.top = `${a}px`, e.style.right = `${u}px`;
+  let f = 0, v = 0, g = 0, x = 0;
+  const h = (o) => {
+    const a = o.clientX - f, c = o.clientY - v, s = Math.max(0, x + c), u = Math.max(0, g - a);
+    e.style.top = `${s}px`, e.style.right = `${u}px`;
   }, m = () => {
     document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m);
   };
-  l.addEventListener("mousedown", (n) => {
-    n.target.closest(".isthattrue-nav-toggle") || (n.preventDefault(), g = n.clientX, f = n.clientY, x = parseFloat(e.style.right || "60"), y = parseFloat(e.style.top || "260"), document.addEventListener("mousemove", h), document.addEventListener("mouseup", m));
+  i.addEventListener("mousedown", (o) => {
+    o.target.closest(".isthattrue-nav-toggle") || (o.preventDefault(), f = o.clientX, v = o.clientY, g = parseFloat(e.style.right || "60"), x = parseFloat(e.style.top || "260"), document.addEventListener("mousemove", h), document.addEventListener("mouseup", m));
   });
-  let c = null;
-  const k = () => {
-    c == null || c.disconnect(), c = new IntersectionObserver((r) => {
-      var i;
-      for (const a of r) {
-        if (!a.isIntersecting) continue;
-        const u = (a.target.textContent || "").trim(), L = w.find((v) => u.includes(v.title));
-        if (L) {
-          for (const v of p.values()) v.classList.remove("active");
-          (i = p.get(L.key)) == null || i.classList.add("active");
+  let l = null;
+  const y = () => {
+    l == null || l.disconnect(), l = new IntersectionObserver((a) => {
+      var c;
+      for (const s of a) {
+        if (!s.isIntersecting) continue;
+        const u = (s.target.textContent || "").trim(), b = S(u);
+        if (b) {
+          for (const T of d.values()) T.classList.remove("active");
+          (c = d.get(b.key)) == null || c.classList.add("active");
           break;
         }
       }
@@ -182,38 +196,38 @@ function U() {
       rootMargin: "-20% 0px -60% 0px",
       threshold: 0
     });
-    const n = E();
-    for (const r of n) {
-      const i = d(r.textContent || "");
-      w.some((a) => i.includes(d(a.title))) && c.observe(r);
+    const o = w();
+    for (const a of o) {
+      const c = a.textContent || "";
+      S(c) && l.observe(a);
     }
-  }, b = new MutationObserver(() => {
-    window.setTimeout(k, 200);
+  }, k = new MutationObserver(() => {
+    window.setTimeout(y, 200);
   });
-  return b.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(k, 300), () => {
-    c == null || c.disconnect(), b.disconnect(), document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m), e.remove();
+  return k.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(y, 300), () => {
+    l == null || l.disconnect(), k.disconnect(), document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m), e.remove();
   };
 }
-const X = M({
+const _ = I({
   name: "FactCheckDetailsLoader",
   setup() {
-    const t = T("plugin:name"), e = N(() => {
-      const l = t == null ? void 0 : t.value;
-      return !!l && F.has(l);
+    const t = M("plugin:name"), e = A(() => {
+      const i = t == null ? void 0 : t.value;
+      return !!i && z.has(i);
     });
-    let o = null;
-    const s = () => {
-      o == null || o(), o = null, e.value && (o = U());
+    let n = null;
+    const r = () => {
+      n == null || n(), n = null, e.value && (n = R());
     };
-    return A(s), I(e, s), z(() => o == null ? void 0 : o()), () => D("div", { style: { display: "none" } });
+    return N(r), B(e, r), D(() => n == null ? void 0 : n()), () => F("div", { style: { display: "none" } });
   }
-}), _ = (t) => {
+}), j = (t) => {
   t.slot({
     type: "plugin-details",
-    component: X,
+    component: _,
     order: -999
   });
 };
 export {
-  _ as default
+  j as default
 };
