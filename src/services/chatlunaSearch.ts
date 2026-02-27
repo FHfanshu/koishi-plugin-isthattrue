@@ -103,7 +103,15 @@ export class ChatlunaSearchAgent {
         summaryType: 'performance'
       })
 
-      this.logger.debug(`[ChatlunaSearch] 创建的 tool: name=${tool?.name}, type=${typeof tool}`)
+      // 强制覆盖 summaryType，防止 balanced 模式下因 llm ref 为 null
+      // 且 config.configurable 未传导致 TypeError: Cannot read properties of undefined (reading 'model')
+      // 某些旧版 chatluna-search-service 的 createTool 不接受 summaryType 参数覆盖
+      if (tool && tool.summaryType === 'balanced') {
+        this.logger.info('[ChatlunaSearch] 强制覆盖 summaryType: balanced → speed')
+        tool.summaryType = 'speed'
+      }
+
+      this.logger.debug(`[ChatlunaSearch] 创建的 tool: name=${tool?.name}, type=${typeof tool}, summaryType=${tool?.summaryType}`)
       this.logger.debug(`[ChatlunaSearch] tool.invoke: ${typeof tool?.invoke}`)
       this.logger.debug(`[ChatlunaSearch] tool._call: ${typeof tool?._call}`)
 
