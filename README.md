@@ -55,6 +55,17 @@ chatluna-fact-check:
 - 超时与重试：`factCheck.timeout` / `factCheck.maxRetries`
 - 代理与调试：`factCheck.proxyMode` / `factCheck.proxyAddress` / `factCheck.logLLMDetails`
 
+### Gemini 搜索模型要求
+
+`factCheck.chatlunaSearchModel`（及 `agent.geminiModel`）填写 Gemini 模型时，**必须满足以下条件**，否则会报 `Cannot read properties of undefined (reading 'model')` 错误：
+
+1. **使用 Gemini 适配器**（`koishi-plugin-chatluna-gemini-adapter`），不可使用 OpenAI 兼容中转。
+2. **Gemini 适配器内仅开启**以下两项联网工具，其余工具（如代码执行等）关闭：
+   - `Google Search`（网络搜索）
+   - `URL context`（URL 内容读取）
+
+> 原因：`chatluna-search-service` 的 `web_search` 工具在 `summaryType` 为 `balanced` 时需要向 LLM 发送 configurable，若适配器或工具配置不兼容，configurable 解析的 `model` 字段会为 undefined 导致崩溃。Gemini 原生适配器 + 仅开启搜索类工具可规避此问题。
+
 ## 搜索源上下文注入
 
 ### 1) `fact_check` 追加上下文（仅附加参考，不改变最终判定）
