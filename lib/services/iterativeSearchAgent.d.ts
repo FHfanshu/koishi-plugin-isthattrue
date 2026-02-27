@@ -11,6 +11,7 @@ export declare class IterativeSearchAgent {
     private logger;
     private subSearchAgent;
     private searXNGSearchService;
+    private ollamaSearchService;
     private emptyEmbeddings;
     constructor(ctx: Context, config: Config);
     search(query: DeepSearchQuery): Promise<SearchResult>;
@@ -32,5 +33,6 @@ export declare class IterativeSearchAgent {
     private searchWithChatLunaTool;
     private searchWithBrowser;
     private searchWithSearXNG;
+    private searchWithOllama;
     private searchWithModel;
 }

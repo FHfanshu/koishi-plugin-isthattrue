@@ -245,10 +245,10 @@ export class DeepSearchController {
       const query = (raw?.query || '').trim()
       if (!query) continue
       const focus = (raw?.focus || '综合核查').trim()
-      const provider = ['grok', 'gemini', 'chatgpt', 'deepseek'].includes(raw?.provider)
+      const provider = ['grok', 'gemini', 'chatgpt', 'deepseek', 'ollama'].includes(raw?.provider)
         ? raw.provider
         : undefined
-      const useTool = ['web_search', 'browser', 'searxng'].includes(raw?.useTool)
+      const useTool = ['web_search', 'browser', 'searxng', 'ollama_search'].includes(raw?.useTool)
         ? raw.useTool
         : undefined
       const toolArgs = typeof raw?.toolArgs === 'object' && raw.toolArgs

@@ -72,6 +72,14 @@ export interface AgentToolConfig {
     chatlunaSearchContextMaxChars: number;
     /** 追加 Chatluna Search 上下文来源数量上限 */
     chatlunaSearchContextMaxSources: number;
+    /** 追加 Ollama Search 上下文到 fact_check 工具输出 */
+    appendOllamaSearchContext: boolean;
+    /** 追加 Ollama Search 上下文超时（毫秒） */
+    ollamaSearchContextTimeout: number;
+    /** 追加 Ollama Search 上下文最大字符数 */
+    ollamaSearchContextMaxChars: number;
+    /** 追加 Ollama Search 上下文来源数量上限 */
+    ollamaSearchContextMaxSources: number;
     /** 启用多源并行搜索 */
     enableMultiSourceSearch: boolean;
     /** 启用 Grok 源 */
@@ -82,6 +90,8 @@ export interface AgentToolConfig {
     searchUseChatgpt: boolean;
     /** 启用 DeepSeek 源 */
     searchUseDeepseek: boolean;
+    /** 启用 Ollama Search 源 */
+    searchUseOllama: boolean;
     /** Grok 模型 */
     grokModel: string;
     /** Gemini 模型 */
@@ -90,6 +100,14 @@ export interface AgentToolConfig {
     chatgptModel: string;
     /** DeepSeek 模型 */
     deepseekModel: string;
+    /** Ollama Search API 地址 */
+    ollamaSearchApiBase: string;
+    /** Ollama Search API Key（可选） */
+    ollamaSearchApiKey: string;
+    /** Ollama Search 返回结果数 */
+    ollamaSearchMaxResults: number;
+    /** Ollama Search 超时（毫秒） */
+    ollamaSearchTimeout: number;
     /** 每个来源超时（毫秒） */
     perSourceTimeout: number;
     /** 多源快速返回：最少成功来源数（达到即提前返回） */
@@ -124,6 +142,8 @@ export interface DeepSearchConfig {
     searchUseChatgpt: boolean;
     /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
     searchUseDeepseek: boolean;
+    /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
+    searchUseOllama: boolean;
     /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
     grokModel: string;
     /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
@@ -132,6 +152,14 @@ export interface DeepSearchConfig {
     chatgptModel: string;
     /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
     deepseekModel: string;
+    /** Ollama Search API 地址 */
+    ollamaSearchApiBase: string;
+    /** Ollama Search API Key（可选） */
+    ollamaSearchApiKey: string;
+    /** Ollama Search 返回结果数 */
+    ollamaSearchMaxResults: number;
+    /** Ollama Search 超时（毫秒） */
+    ollamaSearchTimeout: number;
     /** 允许使用 chatluna-search-service 的 web_search 工具 */
     useChatlunaSearchTool: boolean;
     /** 允许使用 chatluna-search-service 的 browser 工具 */

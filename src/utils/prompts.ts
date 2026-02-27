@@ -106,14 +106,15 @@ export const DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT = `你是 DeepSearch 主控模
   "queries": [
     {"query":"搜索词","provider":"grok","focus":"X/Twitter 讨论","useTool":"web_search"},
     {"query":"搜索词","provider":"gemini","focus":"新闻与官方通报"},
-    {"query":"搜索词","focus":"多引擎聚合","useTool":"searxng","searxngConfig":{"engines":"google,bing,duckduckgo","categories":"general,news","numResults":8}}
+    {"query":"搜索词","focus":"多引擎聚合","useTool":"searxng","searxngConfig":{"engines":"google,bing,duckduckgo","categories":"general,news","numResults":8}},
+    {"query":"搜索词","provider":"ollama","focus":"Ollama Search 聚合"}
   ],
   "rationale":"本轮计划理由"
 }
 \`\`\`
 
-可选 provider: grok | gemini | chatgpt | deepseek
-可选 useTool: web_search | browser | searxng`
+可选 provider: grok | gemini | chatgpt | deepseek | ollama
+可选 useTool: web_search | browser | searxng | ollama_search`
 
 /**
  * DeepSearch 评估系统提示词
@@ -292,7 +293,8 @@ ${summarizeHistory(history)}
 2. 每条任务必须有 focus
 3. 避免与历史完全重复
 4. 当需要多引擎聚合检索时可使用 useTool=searxng
-5. 仅输出 JSON`
+5. 需要 Ollama 搜索时可使用 provider=ollama 或 useTool=ollama_search
+6. 仅输出 JSON`
 }
 
 /**

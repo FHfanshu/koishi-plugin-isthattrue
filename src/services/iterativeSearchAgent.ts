@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import type { DeepSearchProvider, DeepSearchQuery, SearchResult } from '../types'
+import { OllamaSearchService } from './ollamaSearch'
 import { SearXNGSearchService } from './searxngSearch'
 import { DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
 
@@ -15,6 +16,7 @@ export class IterativeSearchAgent {
   private logger
   private subSearchAgent: SubSearchAgent
   private searXNGSearchService: SearXNGSearchService
+  private ollamaSearchService: OllamaSearchService
   private emptyEmbeddings: any = null
 
   constructor(
@@ -24,6 +26,7 @@ export class IterativeSearchAgent {
     this.logger = ctx.logger('chatluna-fact-check')
     this.subSearchAgent = new SubSearchAgent(ctx, config)
     this.searXNGSearchService = new SearXNGSearchService(ctx, config)
+    this.ollamaSearchService = new OllamaSearchService(ctx, config)
     this.tryLoadEmptyEmbeddings()
   }
 
@@ -41,6 +44,14 @@ export class IterativeSearchAgent {
         return await this.searchWithBrowser(query)
       } catch (error) {
         this.logger.warn(`[IterativeSearch] browser 调用失败，回退模型搜索: ${(error as Error).message}`)
+      }
+    }
+
+    if (query.useTool === 'ollama_search' && this.config.deepSearch.searchUseOllama) {
+      try {
+        return await this.searchWithOllama(query)
+      } catch (error) {
+        this.logger.warn(`[IterativeSearch] ollama_search 调用失败，回退模型搜索: ${(error as Error).message}`)
       }
     }
 
@@ -244,6 +255,7 @@ ${focus}
     if (this.config.deepSearch.searchUseGemini) providers.push('gemini')
     if (this.config.deepSearch.searchUseChatgpt) providers.push('chatgpt')
     if (this.config.deepSearch.searchUseDeepseek) providers.push('deepseek')
+    if (this.config.deepSearch.searchUseOllama) providers.push('ollama')
     return providers
   }
 
@@ -283,6 +295,8 @@ ${focus}
         return this.config.deepSearch.deepseekModel?.trim()
           || this.config.agent.deepseekModel?.trim()
           || fallback
+      case 'ollama':
+        return fallback
       default:
         return fallback
     }
@@ -315,18 +329,30 @@ ${focus}
     return this.searXNGSearchService.search(query)
   }
 
+  private async searchWithOllama(query: DeepSearchQuery): Promise<SearchResult> {
+    return this.ollamaSearchService.search(
+      query.query,
+      `Ollama Search: ${query.focus}`,
+      'deepsearch'
+    )
+  }
+
   private async searchWithModel(query: DeepSearchQuery): Promise<SearchResult> {
     const resolvedProvider = this.resolveProvider(query.provider)
     if (!resolvedProvider) {
       return {
         agentId: 'deepsearch-model',
         perspective: `DeepSearch 模型搜索: ${query.focus}`,
-        findings: 'DeepSearch LLM 搜索源均已禁用，请开启至少一个来源（Grok/Gemini/ChatGPT/DeepSeek）',
+        findings: 'DeepSearch LLM 搜索源均已禁用，请开启至少一个来源（Grok/Gemini/ChatGPT/DeepSeek/Ollama）',
         sources: [],
         confidence: 0,
         failed: true,
         error: 'all deepsearch llm providers disabled',
       }
+    }
+
+    if (resolvedProvider === 'ollama') {
+      return this.searchWithOllama(query)
     }
 
     const modelName = this.getModelName(resolvedProvider)

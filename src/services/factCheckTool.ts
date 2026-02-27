@@ -4,13 +4,14 @@ import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import { SearchResult } from '../types'
 import { ChatlunaSearchAgent } from './chatlunaSearch'
+import { OllamaSearchService } from './ollamaSearch'
 import {
   FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT,
   buildFactCheckToolSearchPrompt,
 } from '../utils/prompts'
 
 interface ToolSearchProvider {
-  key: 'grok' | 'gemini' | 'chatgpt' | 'deepseek'
+  key: 'grok' | 'gemini' | 'chatgpt' | 'deepseek' | 'ollama'
   label: string
   model: string
 }
@@ -64,10 +65,21 @@ class FactCheckTool extends Tool {
 
   private createProviderTask(
     subSearchAgent: SubSearchAgent,
+    ollamaSearchService: OllamaSearchService,
     claim: string,
     provider: ToolSearchProvider,
     index: number
   ): Promise<ProviderOutcome> {
+    if (provider.key === 'ollama') {
+      return this.withTimeout(
+        ollamaSearchService.search(claim, 'OllamaSearch', 'agent'),
+        this.config.agent.ollamaSearchTimeout,
+        provider.label
+      )
+        .then((value): ProviderOutcome => ({ index, provider, status: 'fulfilled', value }))
+        .catch((reason): ProviderOutcome => ({ index, provider, status: 'rejected', reason }))
+    }
+
     return this.withTimeout(
       subSearchAgent.deepSearchWithModel(
         claim,
@@ -124,6 +136,13 @@ class FactCheckTool extends Tool {
     const deepseekModel = this.config.agent.deepseekModel?.trim()
     if (this.config.agent.searchUseDeepseek && deepseekModel) {
       providers.push({ key: 'deepseek', label: 'DeepSeekSearch', model: deepseekModel })
+    }
+    if (this.config.agent.searchUseOllama) {
+      providers.push({
+        key: 'ollama',
+        label: 'OllamaSearch',
+        model: 'ollama-search-api',
+      })
     }
 
     if (providers.length === 0) {
@@ -211,6 +230,13 @@ ${sourceText}`
       return null
     }
 
+    const chatlunaSearchEnabled = this.config.tof.enableChatlunaSearch !== false
+    const chatlunaSearchModel = this.config.tof.chatlunaSearchModel?.trim()
+    if (!chatlunaSearchEnabled || !chatlunaSearchModel) {
+      this.logger.debug('[ChatlunaTool] 追加上下文已开启，但 tof.enableChatlunaSearch 或 tof.chatlunaSearchModel 未配置，已跳过')
+      return null
+    }
+
     const chatlunaSearchAgent = new ChatlunaSearchAgent(this.ctx, this.config)
     if (!chatlunaSearchAgent.isAvailable()) {
       this.logger.debug('[ChatlunaTool] appendChatlunaSearchContext=true，但 chatluna-search-service 不可用，已跳过')
@@ -240,6 +266,52 @@ ${sourceText}`
     return `${baseOutput}\n\n${context}`
   }
 
+  private formatOllamaSearchContext(result: SearchResult): string {
+    const findings = this.truncate(
+      result.findings,
+      this.config.agent.ollamaSearchContextMaxChars
+    )
+    const sources = result.sources.slice(0, this.config.agent.ollamaSearchContextMaxSources)
+    const sourceText = sources.length > 0
+      ? sources.map(s => `- ${s}`).join('\n')
+      : '- 无'
+
+    return `[OllamaSearchContext]
+${findings}
+
+[OllamaSearchSources]
+${sourceText}`
+  }
+
+  private async buildOllamaSearchContext(claim: string): Promise<string | null> {
+    if (!this.config.agent.appendOllamaSearchContext) {
+      return null
+    }
+
+    const apiBase = this.config.agent.ollamaSearchApiBase?.trim()
+    if (!apiBase) {
+      this.logger.debug('[ChatlunaTool] appendOllamaSearchContext=true，但 ollamaSearchApiBase 未配置，已跳过')
+      return null
+    }
+
+    const ollamaSearchService = new OllamaSearchService(this.ctx, this.config)
+    try {
+      const searchResult = await this.withTimeout(
+        ollamaSearchService.search(claim, 'Ollama Search 上下文', 'agent'),
+        this.config.agent.ollamaSearchContextTimeout,
+        'OllamaSearchContext'
+      )
+
+      if (!searchResult || searchResult.failed) {
+        return null
+      }
+      return this.formatOllamaSearchContext(searchResult)
+    } catch (error) {
+      this.logger.warn(`[ChatlunaTool] 追加 Ollama Search 上下文失败: ${(error as Error).message}`)
+      return null
+    }
+  }
+
   async _call(input: string): Promise<string> {
     const rawClaim = (input || '').trim()
     if (!rawClaim) {
@@ -256,6 +328,7 @@ ${sourceText}`
       this.logger.info('[ChatlunaTool] 收到事实核查请求')
 
       const subSearchAgent = new SubSearchAgent(this.ctx, this.config)
+      const ollamaSearchService = new OllamaSearchService(this.ctx, this.config)
       const providers = this.mode === 'quick'
         ? (() => {
             const provider = this.getQuickProvider()
@@ -276,14 +349,16 @@ ${sourceText}`
           ? this.config.agent.quickToolTimeout
           : this.config.agent.perSourceTimeout
         const result = await this.withTimeout(
-          subSearchAgent.deepSearchWithModel(
-            claim,
-            provider.model,
-            `tool-${provider.key}`,
-            provider.label,
-            buildFactCheckToolSearchPrompt(claim),
-            FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
-          ),
+          provider.key === 'ollama'
+            ? ollamaSearchService.search(claim, provider.label, 'agent')
+            : subSearchAgent.deepSearchWithModel(
+                claim,
+                provider.model,
+                `tool-${provider.key}`,
+                provider.label,
+                buildFactCheckToolSearchPrompt(claim),
+                FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
+              ),
           timeout,
           provider.label
         )
@@ -291,8 +366,9 @@ ${sourceText}`
           return `[${provider.label}]\n搜索失败: ${result.error || result.findings}`
         }
         const output = this.formatSingleResult(result)
-        const context = await this.buildChatlunaSearchContext(claim)
-        return this.appendContext(output, context)
+        const chatlunaContext = await this.buildChatlunaSearchContext(claim)
+        const ollamaContext = await this.buildOllamaSearchContext(claim)
+        return this.appendContext(this.appendContext(output, chatlunaContext), ollamaContext)
       }
 
       const successResults: SearchResult[] = []
@@ -315,7 +391,7 @@ ${sourceText}`
         const index = nextProviderIndex
         const provider = providers[index]
         nextProviderIndex += 1
-        active.set(index, this.createProviderTask(subSearchAgent, claim, provider, index))
+        active.set(index, this.createProviderTask(subSearchAgent, ollamaSearchService, claim, provider, index))
         return true
       }
 
@@ -378,14 +454,16 @@ ${sourceText}`
       }
 
       const output = this.formatMultiResults(successResults)
-      const context = await this.buildChatlunaSearchContext(claim)
+      const chatlunaContext = await this.buildChatlunaSearchContext(claim)
+      const ollamaContext = await this.buildOllamaSearchContext(claim)
+      const outputWithContext = this.appendContext(
+        this.appendContext(output, chatlunaContext),
+        ollamaContext
+      )
       if (failedLabels.length > 0) {
-        return this.appendContext(
-          `${output}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`,
-          context
-        )
+        return `${outputWithContext}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`
       }
-      return this.appendContext(output, context)
+      return outputWithContext
     } catch (error) {
       this.logger.error('[ChatlunaTool] 核查失败:', error)
       return `[MultiSourceSearch]\n搜索失败: ${(error as Error).message}`

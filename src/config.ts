@@ -74,6 +74,14 @@ export interface AgentToolConfig {
   chatlunaSearchContextMaxChars: number
   /** 追加 Chatluna Search 上下文来源数量上限 */
   chatlunaSearchContextMaxSources: number
+  /** 追加 Ollama Search 上下文到 fact_check 工具输出 */
+  appendOllamaSearchContext: boolean
+  /** 追加 Ollama Search 上下文超时（毫秒） */
+  ollamaSearchContextTimeout: number
+  /** 追加 Ollama Search 上下文最大字符数 */
+  ollamaSearchContextMaxChars: number
+  /** 追加 Ollama Search 上下文来源数量上限 */
+  ollamaSearchContextMaxSources: number
   /** 启用多源并行搜索 */
   enableMultiSourceSearch: boolean
   /** 启用 Grok 源 */
@@ -84,6 +92,8 @@ export interface AgentToolConfig {
   searchUseChatgpt: boolean
   /** 启用 DeepSeek 源 */
   searchUseDeepseek: boolean
+  /** 启用 Ollama Search 源 */
+  searchUseOllama: boolean
   /** Grok 模型 */
   grokModel: string
   /** Gemini 模型 */
@@ -92,6 +102,14 @@ export interface AgentToolConfig {
   chatgptModel: string
   /** DeepSeek 模型 */
   deepseekModel: string
+  /** Ollama Search API 地址 */
+  ollamaSearchApiBase: string
+  /** Ollama Search API Key（可选） */
+  ollamaSearchApiKey: string
+  /** Ollama Search 返回结果数 */
+  ollamaSearchMaxResults: number
+  /** Ollama Search 超时（毫秒） */
+  ollamaSearchTimeout: number
   /** 每个来源超时（毫秒） */
   perSourceTimeout: number
   /** 多源快速返回：最少成功来源数（达到即提前返回） */
@@ -127,6 +145,8 @@ export interface DeepSearchConfig {
   searchUseChatgpt: boolean
   /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
   searchUseDeepseek: boolean
+  /** 启用 Ollama Search 作为 DeepSearch 搜索源 */
+  searchUseOllama: boolean
   /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
   grokModel: string
   /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
@@ -135,6 +155,14 @@ export interface DeepSearchConfig {
   chatgptModel: string
   /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
   deepseekModel: string
+  /** Ollama Search API 地址 */
+  ollamaSearchApiBase: string
+  /** Ollama Search API Key（可选） */
+  ollamaSearchApiKey: string
+  /** Ollama Search 返回结果数 */
+  ollamaSearchMaxResults: number
+  /** Ollama Search 超时（毫秒） */
+  ollamaSearchTimeout: number
   /** 允许使用 chatluna-search-service 的 web_search 工具 */
   useChatlunaSearchTool: boolean
   /** 允许使用 chatluna-search-service 的 browser 工具 */
@@ -301,6 +329,24 @@ const agentToolSchema = Schema.object({
     .max(20)
     .default(5)
     .description('追加 Chatluna Search 上下文来源数量上限'),
+  appendOllamaSearchContext: Schema.boolean()
+    .default(false)
+    .description('为 fact_check 工具追加 Ollama Search 上下文（可选）'),
+  ollamaSearchContextTimeout: Schema.number()
+    .min(3000)
+    .max(120000)
+    .default(12000)
+    .description('追加 Ollama Search 上下文超时（毫秒）'),
+  ollamaSearchContextMaxChars: Schema.number()
+    .min(200)
+    .max(8000)
+    .default(1200)
+    .description('追加 Ollama Search 上下文最大字符数'),
+  ollamaSearchContextMaxSources: Schema.number()
+    .min(1)
+    .max(20)
+    .default(5)
+    .description('追加 Ollama Search 上下文来源数量上限'),
 }).description('Fact Check 工具')
 
 const agentMultiSourceSchema = Schema.object({
@@ -319,6 +365,9 @@ const agentMultiSourceSchema = Schema.object({
   searchUseDeepseek: Schema.boolean()
     .default(false)
     .description('多源搜索包含 DeepSeek（需模型支持搜索工具）'),
+  searchUseOllama: Schema.boolean()
+    .default(false)
+    .description('多源搜索包含 Ollama Search'),
   grokModel: Schema.dynamic('model')
     .default('')
     .description('Grok 来源模型（留空时回退 searchModel）'),
@@ -331,6 +380,23 @@ const agentMultiSourceSchema = Schema.object({
   deepseekModel: Schema.dynamic('model')
     .default('')
     .description('DeepSeek 来源模型（留空则跳过 DeepSeek 来源）'),
+  ollamaSearchApiBase: Schema.string()
+    .default('https://ollama.com/api/web_search')
+    .description('Ollama Search API 地址（默认官方 API）'),
+  ollamaSearchApiKey: Schema.string()
+    .default('')
+    .role('secret')
+    .description('Ollama Search API Key（可选，私有/托管服务时需要）'),
+  ollamaSearchMaxResults: Schema.number()
+    .min(1)
+    .max(10)
+    .default(5)
+    .description('Ollama Search 返回结果数'),
+  ollamaSearchTimeout: Schema.number()
+    .min(3000)
+    .max(120000)
+    .default(15000)
+    .description('Ollama Search 超时（毫秒）'),
   perSourceTimeout: Schema.number()
     .min(5000)
     .max(180000)
@@ -397,6 +463,9 @@ const deepSearchLLMSourceSchema = Schema.object({
   searchUseDeepseek: Schema.boolean()
     .default(false)
     .description('DeepSearch LLM 搜索源包含 DeepSeek'),
+  searchUseOllama: Schema.boolean()
+    .default(false)
+    .description('DeepSearch 搜索源包含 Ollama Search'),
   grokModel: Schema.dynamic('model')
     .default('')
     .description('Grok 模型（留空回退 agent.grokModel/tof.searchModel）'),
@@ -409,6 +478,23 @@ const deepSearchLLMSourceSchema = Schema.object({
   deepseekModel: Schema.dynamic('model')
     .default('')
     .description('DeepSeek 模型（留空回退 agent.deepseekModel/tof.searchModel）'),
+  ollamaSearchApiBase: Schema.string()
+    .default('https://ollama.com/api/web_search')
+    .description('Ollama Search API 地址'),
+  ollamaSearchApiKey: Schema.string()
+    .default('')
+    .role('secret')
+    .description('Ollama Search API Key（可选）'),
+  ollamaSearchMaxResults: Schema.number()
+    .min(1)
+    .max(10)
+    .default(5)
+    .description('Ollama Search 返回结果数'),
+  ollamaSearchTimeout: Schema.number()
+    .min(3000)
+    .max(120000)
+    .default(15000)
+    .description('Ollama Search 超时（毫秒）'),
 }).description('LLM 搜索源')
 
 const deepSearchChatlunaIntegrationSchema = Schema.object({
