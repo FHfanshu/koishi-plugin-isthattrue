@@ -74,6 +74,8 @@ export interface AgentToolConfig {
   maxFindingsChars: number
   /** 启用异步模式（工具秒返，完成后自动推送结果到会话，规避 chatluna-character 锁超时） */
   asyncMode: boolean
+  /** 异步结果发送前汇总模型（留空则直接发送原始搜索结果） */
+  asyncResultSummaryModel: string
 }
 
 /**
@@ -286,7 +288,10 @@ const agentMultiSourceSchema = Schema.object({
     .description('fact_check 输出中每个来源 findings 的最大字符数'),
   asyncMode: Schema.boolean()
     .default(true)
-    .description('启用异步模式：工具秒返"任务已启动"，完成后自动推送结果到会话。\\n开启后可规避 chatluna-character 的 180 秒锁超时，适合搜索耗时较长的场景。'),
+    .description('启用异步模式：工具秒返"任务已启动"，完成后自动推送结果到会话。\n开启后可规避 chatluna-character 的 180 秒锁超时，适合搜索耗时较长的场景。'),
+  asyncResultSummaryModel: Schema.dynamic('model')
+    .default('')
+    .description('异步结果汇总模型（留空则直接发送原始搜索结果）。\n填写后，异步任务完成时会先用该模型将多源搜索结果整合为自然语言，再发送到会话，适合配合 chatluna-character 使用。\n建议填写快速模型，如 gemini-flash。'),
 }).description('多源搜索配置')
 
 const deepSearchCoreSchema = Schema.object({

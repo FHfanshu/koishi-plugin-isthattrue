@@ -5,6 +5,7 @@ import { Context } from 'koishi'
 import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import { SearchResult } from '../types'
+import { ChatlunaAdapter } from './chatluna'
 import { ChatlunaSearchAgent } from './chatlunaSearch'
 import { OllamaSearchService } from './ollamaSearch'
 import { hasEnabledApiProvider } from '../utils/apiConfig'
@@ -363,7 +364,25 @@ ${sourceText}`
       FactCheckTool.ASYNC_TIMEOUT_MS,
       'FactCheck 异步'
     )
-      .then((result) => {
+      .then(async (result) => {
+        const summaryModel = this.config.agent.asyncResultSummaryModel?.trim()
+        if (summaryModel) {
+          try {
+            const chatluna = new ChatlunaAdapter(this.ctx, this.config)
+            const summary = await withTimeout(
+              chatluna.chat({
+                model: summaryModel,
+                systemPrompt: '你是一个信息汇总助手。请将以下来自多个来源的搜索结果整合成清晰易读的自然语言回答。要求：保留关键信息和数据，去除格式标签（如[GeminiSearch]等），不要重复相同内容，用分段或列表组织，末尾附来源链接。',
+                message: `问题：${rawClaim}\n\n${result}`,
+              }),
+              30000,
+              'AsyncResultSummary'
+            )
+            return session.send(summary.content)
+          } catch (summaryErr) {
+            this.logger.warn('[ChatlunaTool] 异步结果汇总失败，回退到原始结果:', (summaryErr as Error).message)
+          }
+        }
         return session.send(`[FactCheck 异步结果]\n${result}`)
       })
       .catch((error: Error) => {

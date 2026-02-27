@@ -72,6 +72,8 @@ export interface AgentToolConfig {
     maxFindingsChars: number;
     /** 启用异步模式（工具秒返，完成后自动推送结果到会话，规避 chatluna-character 锁超时） */
     asyncMode: boolean;
+    /** 异步结果发送前汇总模型（留空则直接发送原始搜索结果） */
+    asyncResultSummaryModel: string;
 }
 /**
  * DeepSearch 配置
