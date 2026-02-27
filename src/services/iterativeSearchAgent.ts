@@ -119,11 +119,19 @@ export class IterativeSearchAgent {
   }
 
   private async invokeTool(tool: any, input: any): Promise<any> {
+    const runnableConfig = {
+      configurable: {
+        model: this.config.tof.chatlunaSearchModel?.trim()
+          || this.config.deepSearch.controllerModel?.trim()
+          || this.config.tof.searchModel,
+      },
+    }
+
     if (typeof tool?.invoke === 'function') {
-      return tool.invoke(input)
+      return tool.invoke(input, runnableConfig)
     }
     if (typeof tool?._call === 'function') {
-      return tool._call(input, undefined, {})
+      return tool._call(input, undefined, runnableConfig)
     }
     throw new Error('工具没有可用调用方法')
   }
