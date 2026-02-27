@@ -106,3 +106,92 @@ export interface ChatResponse {
     completionTokens: number
   }
 }
+
+/**
+ * DeepSearch 来源提供方
+ */
+export type DeepSearchProvider = 'grok' | 'gemini' | 'chatgpt' | 'deepseek'
+
+/**
+ * DeepSearch 可调用工具
+ */
+export type DeepSearchToolType = 'web_search' | 'browser' | 'searxng'
+
+/**
+ * DeepSearch 单任务的 SearXNG 参数覆盖
+ */
+export interface DeepSearchSearXNGConfig {
+  engines?: string
+  categories?: string
+  numResults?: number
+}
+
+/**
+ * DeepSearch 单条搜索任务
+ */
+export interface DeepSearchQuery {
+  /** 搜索关键词 */
+  query: string
+  /** 指定模型来源 */
+  provider?: DeepSearchProvider
+  /** 搜索重点 */
+  focus: string
+  /** 优先使用的工具 */
+  useTool?: DeepSearchToolType
+  /** 工具参数 */
+  toolArgs?: {
+    url?: string
+    action?: string
+    params?: string
+  }
+  /** SearXNG 参数覆盖（仅 useTool=searxng 生效） */
+  searxngConfig?: DeepSearchSearXNGConfig
+}
+
+/**
+ * DeepSearch 单轮计划
+ */
+export interface DeepSearchPlan {
+  queries: DeepSearchQuery[]
+  rationale: string
+}
+
+/**
+ * DeepSearch 轮次评估结果
+ */
+export interface DeepSearchEvaluation {
+  shouldStop: boolean
+  reason: string
+  confidence: number
+  gaps?: string[]
+}
+
+/**
+ * DeepSearch 单轮历史
+ */
+export interface DeepSearchRound {
+  round: number
+  plan: DeepSearchPlan
+  results: SearchResult[]
+  evaluation: DeepSearchEvaluation
+  elapsedMs: number
+}
+
+/**
+ * DeepSearch 全量历史
+ */
+export interface DeepSearchHistory {
+  rounds: DeepSearchRound[]
+}
+
+/**
+ * DeepSearch 最终报告
+ */
+export interface DeepSearchReport {
+  summary: string
+  keyFindings: string[]
+  sources: string[]
+  confidence: number
+  conclusion: string
+  rounds: number
+}

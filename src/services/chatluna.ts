@@ -22,15 +22,12 @@ interface ChatModel {
   ): Promise<{ content: string | object }>
 }
 
-const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-
 /**
  * Chatluna 集成服务
  * 封装对 koishi-plugin-chatluna 的调用
  */
 export class ChatlunaAdapter {
   private logger
-  private bypassProxyWarned = false
 
   constructor(private ctx: Context, private config?: any) {
     this.logger = ctx.logger('chatluna-fact-check')
@@ -52,22 +49,6 @@ export class ChatlunaAdapter {
     }
 
     const startTime = Date.now()
-
-    // 打印当前环境变量中的代理信息
-    const activeProxies = PROXY_VARS
-      .filter(v => process.env[v])
-      .map(v => `${v}=${process.env[v]}`)
-
-    if (this.config?.bypassProxy) {
-      if (!this.bypassProxyWarned) {
-        this.logger.warn('bypassProxy 已启用，但为避免并发污染不会修改全局代理环境变量；请在 chatluna/系统层配置无代理模型端点。')
-        this.bypassProxyWarned = true
-      }
-    } else if (activeProxies.length > 0) {
-      this.logger.debug(`当前环境代理：${activeProxies.join(', ')}`)
-    } else {
-      this.logger.debug('当前环境未检测到系统代理环境变量')
-    }
 
     // 使用 createChatModel 创建模型实例（无需 room）
     const modelRef = await this.ctx.chatluna.createChatModel(request.model)
@@ -107,7 +88,7 @@ export class ChatlunaAdapter {
     }
 
     // 打印请求体
-    if (this.config?.logLLMDetails) {
+    if (this.config?.tof?.logLLMDetails || this.config?.logLLMDetails) {
       this.logger.info(`[LLM Request] Model: ${request.model}\nSystem: ${request.systemPrompt || 'None'}\nMessage: ${typeof messageContent === 'string' ? messageContent.substring(0, 500) : 'Complex content'}`)
     }
 
@@ -130,7 +111,7 @@ export class ChatlunaAdapter {
       : JSON.stringify(response.content)
 
     // 打印响应体
-    if (this.config?.logLLMDetails) {
+    if (this.config?.tof?.logLLMDetails || this.config?.logLLMDetails) {
       this.logger.info(`[LLM Response] Model: ${request.model}\nContent: ${content}`)
     }
 

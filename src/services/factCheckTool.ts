@@ -3,6 +3,7 @@ import { Context } from 'koishi'
 import { SubSearchAgent } from '../agents/subSearchAgent'
 import { Config } from '../config'
 import { SearchResult } from '../types'
+import { ChatlunaSearchAgent } from './chatlunaSearch'
 import {
   FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT,
   buildFactCheckToolSearchPrompt,
@@ -14,6 +15,17 @@ interface ToolSearchProvider {
   model: string
 }
 
+type ProviderOutcome = {
+  index: number
+  provider: ToolSearchProvider
+  status: 'fulfilled' | 'rejected'
+  value?: SearchResult
+  reason?: unknown
+}
+
+type WaitOutcome = ProviderOutcome | { status: 'timeout' }
+type ToolMode = 'deep' | 'quick'
+
 class FactCheckTool extends Tool {
   name: string
   description: string
@@ -23,12 +35,72 @@ class FactCheckTool extends Tool {
     private ctx: Context,
     private config: Config,
     toolName: string,
-    toolDescription: string
+    toolDescription: string,
+    private mode: ToolMode = 'deep'
   ) {
     super()
     this.name = toolName
     this.description = toolDescription
     this.logger = ctx.logger('chatluna-fact-check')
+  }
+
+  private getQuickProvider(): ToolSearchProvider | null {
+    const explicit = this.config.agent.quickToolModel?.trim()
+    const gemini = this.config.agent.geminiModel?.trim()
+    const chatlunaSearchModel = this.config.tof.chatlunaSearchModel?.trim()
+    const fallback = explicit || gemini || chatlunaSearchModel
+    if (!fallback) return null
+    return {
+      key: 'gemini',
+      label: 'GeminiWebSearch',
+      model: fallback,
+    }
+  }
+
+  private normalizeFastReturnMinSuccess(providerCount: number): number {
+    const configured = this.config.agent.fastReturnMinSuccess ?? 2
+    return Math.max(1, Math.min(configured, providerCount))
+  }
+
+  private createProviderTask(
+    subSearchAgent: SubSearchAgent,
+    claim: string,
+    provider: ToolSearchProvider,
+    index: number
+  ): Promise<ProviderOutcome> {
+    return this.withTimeout(
+      subSearchAgent.deepSearchWithModel(
+        claim,
+        provider.model,
+        `tool-${provider.key}`,
+        provider.label,
+        buildFactCheckToolSearchPrompt(claim),
+        FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
+      ),
+      this.config.agent.perSourceTimeout,
+      provider.label
+    )
+      .then((value): ProviderOutcome => ({ index, provider, status: 'fulfilled', value }))
+      .catch((reason): ProviderOutcome => ({ index, provider, status: 'rejected', reason }))
+  }
+
+  private async waitNextOutcome(
+    active: Map<number, Promise<ProviderOutcome>>,
+    remainingMs: number
+  ): Promise<WaitOutcome> {
+    if (active.size === 0) {
+      return { status: 'timeout' }
+    }
+    if (remainingMs <= 0) {
+      return { status: 'timeout' }
+    }
+
+    return Promise.race<WaitOutcome>([
+      ...active.values(),
+      new Promise<{ status: 'timeout' }>((resolve) => {
+        setTimeout(() => resolve({ status: 'timeout' }), remainingMs)
+      }),
+    ])
   }
 
   private getToolProviders(): ToolSearchProvider[] {
@@ -117,6 +189,57 @@ class FactCheckTool extends Tool {
     return parts.join('\n')
   }
 
+  private formatChatlunaSearchContext(result: SearchResult): string {
+    const findings = this.truncate(
+      result.findings,
+      this.config.agent.chatlunaSearchContextMaxChars
+    )
+    const sources = result.sources.slice(0, this.config.agent.chatlunaSearchContextMaxSources)
+    const sourceText = sources.length > 0
+      ? sources.map(s => `- ${s}`).join('\n')
+      : '- 无'
+
+    return `[ChatlunaSearchContext]
+${findings}
+
+[ChatlunaSearchSources]
+${sourceText}`
+  }
+
+  private async buildChatlunaSearchContext(claim: string): Promise<string | null> {
+    if (!this.config.agent.appendChatlunaSearchContext) {
+      return null
+    }
+
+    const chatlunaSearchAgent = new ChatlunaSearchAgent(this.ctx, this.config)
+    if (!chatlunaSearchAgent.isAvailable()) {
+      this.logger.debug('[ChatlunaTool] appendChatlunaSearchContext=true，但 chatluna-search-service 不可用，已跳过')
+      return null
+    }
+
+    try {
+      const searchResult = await this.withTimeout(
+        chatlunaSearchAgent.search(claim),
+        this.config.agent.chatlunaSearchContextTimeout,
+        'ChatlunaSearchContext'
+      )
+
+      if (!searchResult || searchResult.failed) {
+        return null
+      }
+
+      return this.formatChatlunaSearchContext(searchResult)
+    } catch (error) {
+      this.logger.warn(`[ChatlunaTool] 追加 Chatluna Search 上下文失败: ${(error as Error).message}`)
+      return null
+    }
+  }
+
+  private appendContext(baseOutput: string, context: string | null): string {
+    if (!context) return baseOutput
+    return `${baseOutput}\n\n${context}`
+  }
+
   async _call(input: string): Promise<string> {
     const rawClaim = (input || '').trim()
     if (!rawClaim) {
@@ -133,10 +256,25 @@ class FactCheckTool extends Tool {
       this.logger.info('[ChatlunaTool] 收到事实核查请求')
 
       const subSearchAgent = new SubSearchAgent(this.ctx, this.config)
-      const providers = this.getToolProviders()
+      const providers = this.mode === 'quick'
+        ? (() => {
+            const provider = this.getQuickProvider()
+            return provider ? [provider] : []
+          })()
+        : this.getToolProviders()
+
+      if (providers.length === 0) {
+        if (this.mode === 'quick') {
+          return '[GeminiWebSearch]\n搜索失败: 未配置可用的 Gemini 快速搜索模型，请设置 agent.quickToolModel 或 agent.geminiModel'
+        }
+        return '[MultiSourceSearch]\n搜索失败: 未配置可用的搜索来源'
+      }
 
       if (!this.config.agent.enableMultiSourceSearch || providers.length === 1) {
         const provider = providers[0]
+        const timeout = this.mode === 'quick'
+          ? this.config.agent.quickToolTimeout
+          : this.config.agent.perSourceTimeout
         const result = await this.withTimeout(
           subSearchAgent.deepSearchWithModel(
             claim,
@@ -146,59 +284,108 @@ class FactCheckTool extends Tool {
             buildFactCheckToolSearchPrompt(claim),
             FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
           ),
-          this.config.agent.perSourceTimeout,
+          timeout,
           provider.label
         )
         if (result.failed) {
           return `[${provider.label}]\n搜索失败: ${result.error || result.findings}`
         }
-        return this.formatSingleResult(result)
+        const output = this.formatSingleResult(result)
+        const context = await this.buildChatlunaSearchContext(claim)
+        return this.appendContext(output, context)
       }
-
-      const settled = await Promise.allSettled(
-        providers.map(provider =>
-          this.withTimeout(
-            subSearchAgent.deepSearchWithModel(
-              claim,
-              provider.model,
-              `tool-${provider.key}`,
-              provider.label,
-              buildFactCheckToolSearchPrompt(claim),
-              FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
-            ),
-            this.config.agent.perSourceTimeout,
-            provider.label
-          )
-        )
-      )
 
       const successResults: SearchResult[] = []
       const failedLabels: string[] = []
+      const start = Date.now()
+      const minSuccess = this.normalizeFastReturnMinSuccess(providers.length)
+      const maxWaitMs = Math.max(
+        1000,
+        Math.min(this.config.agent.fastReturnMaxWaitMs ?? 12000, this.config.agent.perSourceTimeout)
+      )
+      const targetConcurrency = minSuccess
 
-      settled.forEach((item, index) => {
+      const active = new Map<number, Promise<ProviderOutcome>>()
+      let nextProviderIndex = 0
+
+      const launchNext = (): boolean => {
+        if (nextProviderIndex >= providers.length) {
+          return false
+        }
+        const index = nextProviderIndex
         const provider = providers[index]
-        if (item.status === 'fulfilled') {
-          if (item.value.failed) {
-            failedLabels.push(provider.label)
-            this.logger.warn(`[ChatlunaTool] ${provider.label} 失败: ${item.value.error || item.value.findings}`)
-          } else {
-            successResults.push(item.value)
+        nextProviderIndex += 1
+        active.set(index, this.createProviderTask(subSearchAgent, claim, provider, index))
+        return true
+      }
+
+      while (active.size < targetConcurrency && launchNext()) {
+        // 预热首批并发任务
+      }
+
+      while (active.size > 0) {
+        const remainingMs = maxWaitMs - (Date.now() - start)
+        const outcome = await this.waitNextOutcome(active, remainingMs)
+
+        if (outcome.status === 'timeout') {
+          this.logger.info(`[ChatlunaTool] 达到快速返回等待上限 ${maxWaitMs}ms，提前返回`)
+          break
+        }
+
+        active.delete(outcome.index)
+
+        if (outcome.status === 'fulfilled') {
+          if (outcome.value?.failed) {
+            failedLabels.push(outcome.provider.label)
+            this.logger.warn(`[ChatlunaTool] ${outcome.provider.label} 失败: ${outcome.value.error || outcome.value.findings}`)
+          } else if (outcome.value) {
+            successResults.push(outcome.value)
           }
         } else {
-          failedLabels.push(provider.label)
-          this.logger.warn(`[ChatlunaTool] ${provider.label} 失败: ${(item.reason as Error)?.message || item.reason}`)
+          failedLabels.push(outcome.provider.label)
+          this.logger.warn(`[ChatlunaTool] ${outcome.provider.label} 失败: ${(outcome.reason as Error)?.message || outcome.reason}`)
         }
-      })
+
+        const elapsed = Date.now() - start
+        if (successResults.length >= minSuccess) {
+          this.logger.info(`[ChatlunaTool] 已获得 ${successResults.length} 个成功来源，提前返回`)
+          break
+        }
+
+        // 当前成功不足时，逐步扩展到后续来源，减少无效并发占用
+        if (elapsed < maxWaitMs) {
+          while (active.size < targetConcurrency && launchNext()) {
+            // 补齐并发槽位
+          }
+        }
+      }
+
+      if (active.size > 0) {
+        // 提前返回后不再等待剩余来源，避免阻塞工具输出
+        active.forEach(task => {
+          task.then((outcome) => {
+            if (outcome.status === 'fulfilled' && outcome.value?.failed) {
+              this.logger.debug(`[ChatlunaTool] 延迟完成但失败: ${outcome.provider.label}`)
+            }
+          }).catch(() => {
+            // no-op，避免未处理 Promise 警告
+          })
+        })
+      }
 
       if (successResults.length === 0) {
         return `[MultiSourceSearch]\n搜索失败: ${failedLabels.join('、') || '全部来源不可用'}`
       }
 
       const output = this.formatMultiResults(successResults)
+      const context = await this.buildChatlunaSearchContext(claim)
       if (failedLabels.length > 0) {
-        return `${output}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`
+        return this.appendContext(
+          `${output}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`,
+          context
+        )
       }
-      return output
+      return this.appendContext(output, context)
     } catch (error) {
       this.logger.error('[ChatlunaTool] 核查失败:', error)
       return `[MultiSourceSearch]\n搜索失败: ${(error as Error).message}`
@@ -220,19 +407,60 @@ export function registerFactCheckTool(ctx: Context, config: Config) {
     return
   }
 
-  const name = config.agent.name?.trim() || 'fact_check'
-  const description = config.agent.description?.trim()
+  const deepToolName = config.agent.name?.trim() || 'fact_check_deep'
+  const deepToolDescription = config.agent.description?.trim()
     || '用于 LLM 网络搜索（作为 chatluna-search 的 LLMSearch 替代）。输入待核查文本，返回多源搜索结果与来源链接（可配置 Grok/Gemini/ChatGPT/DeepSeek），由上层 Agent 自行判断。'
+  const quickToolName = config.agent.quickToolName?.trim() || 'fact_check'
+  const quickToolDescription = config.agent.quickToolDescription?.trim()
+    || '用于快速网络搜索（Gemini 单源）。输入待核查文本，快速返回来源与摘要，适合日常场景。'
 
   ctx.effect(() => {
-    logger.info(`[ChatlunaTool] 注册工具: ${name}`)
-    return chatluna.platform.registerTool(name, {
-      createTool() {
-        return new FactCheckTool(ctx, config, name, description)
-      },
-      selector() {
-        return true
-      },
-    })
+    const disposables: Array<() => void> = []
+    const skipLegacyDeepTool = config.deepSearch.enable
+
+    if (config.agent.enableDeepTool && !skipLegacyDeepTool) {
+      logger.info(`[ChatlunaTool] 注册工具(深度): ${deepToolName}`)
+      const disposeDeep = chatluna.platform.registerTool(deepToolName, {
+        createTool() {
+          return new FactCheckTool(ctx, config, deepToolName, deepToolDescription, 'deep')
+        },
+        selector() {
+          return true
+        },
+      })
+      if (typeof disposeDeep === 'function') {
+        disposables.push(disposeDeep)
+      }
+    }
+    if (config.agent.enableDeepTool && skipLegacyDeepTool) {
+      logger.info('[ChatlunaTool] 已启用 deep_search，跳过 legacy 多源深搜工具注册')
+    }
+
+    if (config.agent.enableQuickTool) {
+      if (quickToolName === deepToolName) {
+        logger.warn('[ChatlunaTool] quickToolName 与深度工具名称重复，已跳过快速工具注册')
+      } else {
+        logger.info(`[ChatlunaTool] 注册工具(快速): ${quickToolName}`)
+        const disposeQuick = chatluna.platform.registerTool(quickToolName, {
+          createTool() {
+            return new FactCheckTool(ctx, config, quickToolName, quickToolDescription, 'quick')
+          },
+          selector() {
+            return true
+          },
+        })
+        if (typeof disposeQuick === 'function') {
+          disposables.push(disposeQuick)
+        }
+      }
+    }
+
+    if ((!config.agent.enableDeepTool || skipLegacyDeepTool) && !config.agent.enableQuickTool) {
+      logger.warn('[ChatlunaTool] enableDeepTool 与 enableQuickTool 均为 false，未注册任何 fact check 工具')
+    }
+
+    return () => {
+      disposables.forEach(dispose => dispose())
+    }
   })
 }

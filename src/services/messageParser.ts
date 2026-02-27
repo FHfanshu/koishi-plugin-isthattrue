@@ -1,9 +1,12 @@
 import { Context, h } from 'koishi'
 import { MessageContent } from '../types'
+import { resolveProxyAgent } from '../utils/http'
+import type { TofConfig } from '../config'
 
 interface MessageParserOptions {
   imageTimeoutMs?: number
   maxImageBytes?: number
+  tofConfig?: TofConfig
 }
 
 const COMMAND_ALIASES = new Set(['tof', '真假', '事实核查', 'factcheck'])
@@ -15,6 +18,7 @@ const COMMAND_ALIASES = new Set(['tof', '真假', '事实核查', 'factcheck'])
 export class MessageParser {
   private imageTimeoutMs: number
   private maxImageBytes: number
+  private tofConfig?: TofConfig
 
   constructor(
     private ctx: Context,
@@ -22,6 +26,7 @@ export class MessageParser {
   ) {
     this.imageTimeoutMs = options.imageTimeoutMs ?? 15000
     this.maxImageBytes = options.maxImageBytes ?? 8 * 1024 * 1024
+    this.tofConfig = options.tofConfig
   }
 
   private stripLeadingCommand(content: string): string {
@@ -191,9 +196,11 @@ export class MessageParser {
       }
 
       // 下载远程图片
+      const proxyAgent = this.tofConfig ? resolveProxyAgent(this.tofConfig) : undefined
       const response = await this.ctx.http.get(url, {
         responseType: 'arraybuffer',
         timeout: this.imageTimeoutMs,
+        ...(proxyAgent !== undefined ? { proxyAgent } : {}),
       })
 
       const rawData = (response as any)?.data ?? response

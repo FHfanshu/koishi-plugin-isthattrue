@@ -16,9 +16,10 @@ const MAX_DESC_LENGTH = 320
  */
 export class ChatlunaSearchAgent {
   private logger
-  // 存储 toolInfo 而不是 tool 实例，每次搜索时重新创建
+  // 缓存 web_search toolInfo，避免重复探测注册信息
   private toolInfo: any = null
   private toolReady = false
+  private toolInitPromise: Promise<void> | null = null
   private emptyEmbeddings: any = null
   private chatluna: ChatlunaAdapter
 
@@ -28,8 +29,7 @@ export class ChatlunaSearchAgent {
   ) {
     this.logger = ctx.logger('chatluna-fact-check')
     this.chatluna = new ChatlunaAdapter(ctx, config)
-    // 延迟初始化工具，等待 chatluna-search-service 完成注册
-    this.initTool()
+    this.toolInitPromise = this.initTool()
   }
 
   private normalizeResultItems(searchResult: any): any[] {
@@ -79,12 +79,34 @@ export class ChatlunaSearchAgent {
     return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
   }
 
-  private async initTool() {
-    // 等待一段时间让 chatluna-search-service 完成初始化
-    await new Promise(resolve => setTimeout(resolve, 2000))
+  private async refreshToolInfo(): Promise<boolean> {
+    const chatluna = (this.ctx as any).chatluna
+    if (!chatluna?.platform) {
+      return false
+    }
 
+    const tools = chatluna.platform.getTools()
+    this.logger.debug(`[ChatlunaSearch] 可用工具列表: ${JSON.stringify(tools.value)}`)
+    if (!tools.value || !tools.value.includes('web_search')) {
+      return false
+    }
+
+    const nextToolInfo = chatluna.platform.getTool('web_search')
+    this.logger.debug(`[ChatlunaSearch] toolInfo: ${JSON.stringify(nextToolInfo ? Object.keys(nextToolInfo) : null)}`)
+    if (!nextToolInfo || typeof nextToolInfo.createTool !== 'function') {
+      return false
+    }
+
+    if (this.toolInfo !== nextToolInfo) {
+      this.logger.debug('[ChatlunaSearch] 检测到 web_search toolInfo 变更')
+    }
+    this.toolInfo = nextToolInfo
+    this.toolReady = true
+    return true
+  }
+
+  private async initTool() {
     try {
-      // 尝试导入 emptyEmbeddings
       try {
         const inMemory = require('koishi-plugin-chatluna/llm-core/model/in_memory')
         this.emptyEmbeddings = inMemory.emptyEmbeddings
@@ -93,30 +115,18 @@ export class ChatlunaSearchAgent {
         this.logger.debug('[ChatlunaSearch] 无法导入 emptyEmbeddings，将使用 null')
       }
 
-      const chatluna = (this.ctx as any).chatluna
-      if (!chatluna?.platform) {
-        this.logger.warn('[ChatlunaSearch] chatluna.platform 不可用')
-        return
-      }
-
-      // 检查 web_search 工具是否已注册
-      const tools = chatluna.platform.getTools()
-      this.logger.debug(`[ChatlunaSearch] 可用工具列表: ${JSON.stringify(tools.value)}`)
-
-      if (tools.value && tools.value.includes('web_search')) {
-        this.toolInfo = chatluna.platform.getTool('web_search')
-        this.logger.debug(`[ChatlunaSearch] toolInfo: ${JSON.stringify(this.toolInfo ? Object.keys(this.toolInfo) : null)}`)
-
-        if (this.toolInfo && typeof this.toolInfo.createTool === 'function') {
-          this.toolReady = true
+      const maxWaitMs = 10000
+      const intervalMs = 200
+      const start = Date.now()
+      while (Date.now() - start < maxWaitMs) {
+        if (await this.refreshToolInfo()) {
           this.logger.info('[ChatlunaSearch] web_search 工具注册信息已获取')
-        } else {
-          this.logger.warn('[ChatlunaSearch] toolInfo 无效或没有 createTool 方法')
-          this.toolInfo = null
+          return
         }
-      } else {
-        this.logger.warn('[ChatlunaSearch] web_search 工具未注册，请确保已启用 chatluna-search-service')
+        await new Promise(resolve => setTimeout(resolve, intervalMs))
       }
+
+      this.logger.warn('[ChatlunaSearch] web_search 工具未在 10 秒内就绪，请确保已启用 chatluna-search-service')
     } catch (error) {
       this.logger.warn('[ChatlunaSearch] 初始化工具失败:', error)
     }
@@ -209,16 +219,15 @@ export class ChatlunaSearchAgent {
     try {
       const chatluna = (this.ctx as any).chatluna
 
+      if (this.toolInitPromise) {
+        await this.toolInitPromise
+      }
+
       // 如果 toolInfo 还没准备好，尝试重新获取
       if (!this.toolReady || !this.toolInfo) {
         this.logger.info('[ChatlunaSearch] 工具未就绪，尝试重新获取...')
-        const tools = chatluna.platform.getTools()
-        if (tools.value && tools.value.includes('web_search')) {
-          this.toolInfo = chatluna.platform.getTool('web_search')
-          if (this.toolInfo && typeof this.toolInfo.createTool === 'function') {
-            this.toolReady = true
-            this.logger.info('[ChatlunaSearch] 工具重新获取成功')
-          }
+        if (chatluna?.platform && await this.refreshToolInfo()) {
+          this.logger.info('[ChatlunaSearch] 工具重新获取成功')
         }
       }
 
@@ -232,7 +241,6 @@ export class ChatlunaSearchAgent {
 
       // 并行执行所有关键词搜索
       const searchPromises = queries.map(async (q) => {
-        // 每次搜索时创建新的工具实例
         const searchTool = this.createSearchTool()
         if (!searchTool) {
           this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 创建搜索工具失败`)
@@ -256,8 +264,28 @@ export class ChatlunaSearchAgent {
 
           return searchData.map(item => ({ ...item, searchQuery: q }))
         } catch (err) {
-          this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 搜索失败:`, err)
-          return []
+          this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 搜索失败，将尝试重建工具:`, err)
+          // 工具实例异常时重建后重试一次
+          const recreatedTool = this.createSearchTool()
+          if (!recreatedTool) {
+            return []
+          }
+          try {
+            let retryResult: any
+            if (typeof recreatedTool.invoke === 'function') {
+              retryResult = await recreatedTool.invoke(q)
+            } else if (typeof recreatedTool._call === 'function') {
+              retryResult = await recreatedTool._call(q, undefined, {})
+            } else {
+              throw new Error('重建后的搜索工具没有可用调用方法')
+            }
+            const retryData = this.normalizeResultItems(retryResult)
+              .slice(0, MAX_RESULTS_PER_QUERY)
+            return retryData.map(item => ({ ...item, searchQuery: q }))
+          } catch (retryErr) {
+            this.logger.warn(`[ChatlunaSearch] 关键词 "${q}" 重试失败:`, retryErr)
+            return []
+          }
         }
       })
 

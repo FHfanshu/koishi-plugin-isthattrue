@@ -1,6 +1,7 @@
 import { Context } from 'koishi'
 import { Config } from '../config'
 import { SearchResult } from '../types'
+import { resolveProxyAgent } from '../utils/http'
 
 interface TavilySearchResult {
   title: string
@@ -46,6 +47,7 @@ export class TavilySearchAgent {
     this.logger.info('[Tavily] 开始搜索:', query.substring(0, 50))
 
     try {
+      const proxyAgent = resolveProxyAgent(this.config.tof)
       const response = await this.ctx.http.post<TavilyResponse>(
         'https://api.tavily.com/search',
         {
@@ -57,6 +59,7 @@ export class TavilySearchAgent {
         },
         {
           timeout: this.config.tof.timeout,
+          ...(proxyAgent !== undefined ? { proxyAgent } : {}),
         }
       )
 

@@ -3,6 +3,7 @@ import { Config } from '../config'
 import { SearchResult, VerificationResult, MessageContent, Verdict } from '../types'
 import { SubSearchAgent } from './subSearchAgent'
 import { VerifyAgent } from './verifyAgent'
+import { DeepSearchController } from './deepSearchController'
 import { ChatlunaSearchAgent } from '../services/chatlunaSearch'
 import { ChatlunaAdapter } from '../services/chatluna'
 import { MessageParser } from '../services/messageParser'
@@ -12,7 +13,7 @@ import { IMAGE_DESCRIPTION_PROMPT } from '../utils/prompts'
 
 /**
  * 主控 Agent
- * 流程：并行搜索 (Chatluna + Grok) -> URL处理 -> Gemini判决
+ * 流程：DeepSearch(可选) / 并行搜索 -> URL处理 -> Gemini判决
  */
 export class MainAgent {
   private subSearchAgent: SubSearchAgent
@@ -34,6 +35,7 @@ export class MainAgent {
     this.messageParser = new MessageParser(ctx, {
       imageTimeoutMs: Math.min(config.tof.timeout, 30000),
       maxImageBytes: 8 * 1024 * 1024,
+      tofConfig: config.tof,
     })
     this.tavilySearchAgent = new TavilySearchAgent(ctx, config)
     this.logger = ctx.logger('chatluna-fact-check')
@@ -66,65 +68,8 @@ export class MainAgent {
         this.logger.info(`[Phase 0] 图片描述：${searchText.substring(0, 100)}...`)
       }
 
-      // Phase 1+2: 并行执行搜索
-      this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok + Tavily)...')
-
-      const searchTasks: Array<{ name: string; promise: Promise<SearchResult | null> }> = []
-
-      // Chatluna 搜索 (通用网页)
-      if (this.chatlunaSearchAgent.isAvailable() && this.config.tof.enableChatlunaSearch) {
-        searchTasks.push({
-          name: 'ChatlunaSearch',
-          promise: this.withTimeout(
-            this.chatlunaSearchAgent.search(searchText),
-            this.config.tof.timeout,
-            'ChatlunaSearch'
-          )
-        })
-      }
-
-      // Grok 深度搜索 (独立，专注 X/Twitter)
-      searchTasks.push({
-        name: 'GrokSearch',
-        promise: this.withTimeout(
-          this.subSearchAgent.deepSearch(searchText),
-          this.config.tof.timeout,
-          'GrokSearch'
-        )
-      })
-
-      if (this.tavilySearchAgent.isAvailable()) {
-        searchTasks.push({
-          name: 'TavilySearch',
-          promise: this.withTimeout(
-            this.tavilySearchAgent.search(searchText),
-            this.config.tof.timeout,
-            'TavilySearch'
-          )
-        })
-      }
-
-      const results = await Promise.allSettled(searchTasks.map(t => t.promise))
-
-      const allSearchResults: SearchResult[] = results
-        .filter((r): r is PromiseFulfilledResult<SearchResult | null> =>
-          r.status === 'fulfilled' && r.value !== null)
-        .map(r => r.value!)
-
-      const searchResults = allSearchResults.filter(result => !result.failed)
-
-      // 记录失败的搜索
-      results.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          this.logger.warn(`搜索 ${searchTasks[i]?.name || i} 失败: ${r.reason}`)
-        }
-      })
-      allSearchResults
-        .filter(result => result.failed)
-        .forEach(result => {
-          this.logger.warn(`搜索 ${result.perspective} 失败: ${result.error || result.findings}`)
-        })
-
+      // Phase 1+2: 搜索证据（DeepSearch 模式优先，失败自动回退旧并行模式）
+      const searchResults = await this.searchEvidence(searchText)
       this.logger.info(`[Phase 1+2] 搜索完成，成功 ${searchResults.length} 个`)
 
       // 如果没有任何搜索结果，返回不确定
@@ -171,6 +116,99 @@ export class MainAgent {
         processingTime: Date.now() - startTime,
       }
     }
+  }
+
+  private async searchEvidence(searchText: string): Promise<SearchResult[]> {
+    if (this.config.deepSearch.enable) {
+      this.logger.info('[Phase 1+2] DeepSearch 迭代搜索中...')
+      try {
+        const controller = new DeepSearchController(this.ctx, this.config, this.chatluna)
+        const report = await this.withTimeout(
+          controller.search(searchText),
+          this.config.deepSearch.maxIterations * this.config.deepSearch.perIterationTimeout + 5000,
+          'DeepSearch'
+        )
+        if (!report) {
+          throw new Error('DeepSearch 超时或无返回结果')
+        }
+
+        const keyFindings = report.keyFindings.length > 0
+          ? report.keyFindings.slice(0, 6).map((item, index) => `${index + 1}. ${item}`).join('\n')
+          : '无'
+
+        return [{
+          agentId: 'deep-search-controller',
+          perspective: `DeepSearch 迭代搜索 (${report.rounds}轮)`,
+          findings: `摘要: ${report.summary}\n\n关键发现:\n${keyFindings}\n\n结论: ${report.conclusion}`,
+          sources: report.sources,
+          confidence: report.confidence,
+        }]
+      } catch (error) {
+        this.logger.warn(`[Phase 1+2] DeepSearch 失败，回退旧并行搜索: ${(error as Error).message}`)
+      }
+    }
+
+    return this.searchEvidenceLegacy(searchText)
+  }
+
+  private async searchEvidenceLegacy(searchText: string): Promise<SearchResult[]> {
+    this.logger.info('[Phase 1+2] 并行搜索中 (Chatluna + Grok + Tavily)...')
+
+    const searchTasks: Array<{ name: string; promise: Promise<SearchResult | null> }> = []
+
+    if (this.chatlunaSearchAgent.isAvailable() && this.config.tof.enableChatlunaSearch) {
+      searchTasks.push({
+        name: 'ChatlunaSearch',
+        promise: this.withTimeout(
+          this.chatlunaSearchAgent.search(searchText),
+          this.config.tof.timeout,
+          'ChatlunaSearch'
+        )
+      })
+    }
+
+    searchTasks.push({
+      name: 'GrokSearch',
+      promise: this.withTimeout(
+        this.subSearchAgent.deepSearch(searchText),
+        this.config.tof.timeout,
+        'GrokSearch'
+      )
+    })
+
+    if (this.tavilySearchAgent.isAvailable()) {
+      searchTasks.push({
+        name: 'TavilySearch',
+        promise: this.withTimeout(
+          this.tavilySearchAgent.search(searchText),
+          this.config.tof.timeout,
+          'TavilySearch'
+        )
+      })
+    }
+
+    const results = await Promise.allSettled(searchTasks.map(t => t.promise))
+
+    const allSearchResults: SearchResult[] = results
+      .filter((r): r is PromiseFulfilledResult<SearchResult | null> =>
+        r.status === 'fulfilled' && r.value !== null)
+      .map(r => r.value!)
+
+    const searchResults = allSearchResults.filter(result => !result.failed)
+
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        this.logger.warn(`搜索 ${searchTasks[i]?.name || i} 失败: ${r.reason}`)
+      }
+    })
+
+    allSearchResults
+      .filter(result => result.failed)
+      .forEach(result => {
+        this.logger.warn(`搜索 ${result.perspective} 失败: ${result.error || result.findings}`)
+      })
+
+    return searchResults
   }
 
   /**

@@ -31,8 +31,10 @@ export interface TofConfig {
     forwardMaxSegmentChars: number;
     /** 是否显示详细过程 */
     verbose: boolean;
-    /** 是否绕过代理 */
-    bypassProxy: boolean;
+    /** HTTP 代理模式 */
+    proxyMode: 'follow-global' | 'direct' | 'custom';
+    /** 自定义 HTTP 代理地址（仅 custom 模式） */
+    proxyAddress: string;
     /** 是否打印 LLM 请求体和响应 */
     logLLMDetails: boolean;
 }
@@ -42,14 +44,34 @@ export interface TofConfig {
 export interface AgentToolConfig {
     /** 是否注册为 Chatluna 工具 */
     enable: boolean;
-    /** 工具名称 */
+    /** 是否注册多源深度搜索工具（legacy，默认关闭，建议改用 deep_search） */
+    enableDeepTool: boolean;
+    /** 是否注册快速搜索工具（默认作为 fact_check） */
+    enableQuickTool: boolean;
+    /** 多源深度搜索工具名称（legacy） */
     name: string;
-    /** 工具描述 */
+    /** 快速搜索工具名称 */
+    quickToolName: string;
+    /** 多源深度搜索工具描述（legacy） */
     description: string;
+    /** 快速搜索工具描述 */
+    quickToolDescription: string;
     /** 工具输入最大长度 */
     maxInputChars: number;
     /** 工具返回来源数量上限 */
     maxSources: number;
+    /** Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel） */
+    quickToolModel: string;
+    /** Gemini 快速搜索超时（毫秒） */
+    quickToolTimeout: number;
+    /** 追加 Chatluna Search 上下文到 fact_check 工具输出 */
+    appendChatlunaSearchContext: boolean;
+    /** 追加 Chatluna Search 上下文超时（毫秒） */
+    chatlunaSearchContextTimeout: number;
+    /** 追加 Chatluna Search 上下文最大字符数 */
+    chatlunaSearchContextMaxChars: number;
+    /** 追加 Chatluna Search 上下文来源数量上限 */
+    chatlunaSearchContextMaxSources: number;
     /** 启用多源并行搜索 */
     enableMultiSourceSearch: boolean;
     /** 启用 Grok 源 */
@@ -70,8 +92,60 @@ export interface AgentToolConfig {
     deepseekModel: string;
     /** 每个来源超时（毫秒） */
     perSourceTimeout: number;
+    /** 多源快速返回：最少成功来源数（达到即提前返回） */
+    fastReturnMinSuccess: number;
+    /** 多源快速返回：最大等待时长（毫秒） */
+    fastReturnMaxWaitMs: number;
     /** 每个来源输出最大长度 */
     maxFindingsChars: number;
+}
+/**
+ * DeepSearch 配置
+ * 用于迭代搜索主控与 deep_search 工具
+ */
+export interface DeepSearchConfig {
+    /** 是否启用 DeepSearch 模式（主流程与工具注册） */
+    enable: boolean;
+    /** 主控模型 */
+    controllerModel: string;
+    /** 最大迭代轮数 */
+    maxIterations: number;
+    /** 每轮超时（毫秒） */
+    perIterationTimeout: number;
+    /** 最低置信度阈值（可选；留空时仅由 LLM 评估决定） */
+    minConfidenceThreshold: number | null;
+    /** 最少来源数量阈值（可选；留空时仅由 LLM 评估决定） */
+    minSourcesThreshold: number | null;
+    /** 启用 Grok 作为 DeepSearch LLM 搜索源 */
+    searchUseGrok: boolean;
+    /** 启用 Gemini 作为 DeepSearch LLM 搜索源 */
+    searchUseGemini: boolean;
+    /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
+    searchUseChatgpt: boolean;
+    /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
+    searchUseDeepseek: boolean;
+    /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
+    grokModel: string;
+    /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
+    geminiModel: string;
+    /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
+    chatgptModel: string;
+    /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
+    deepseekModel: string;
+    /** 允许使用 chatluna-search-service 的 web_search 工具 */
+    useChatlunaSearchTool: boolean;
+    /** 允许使用 chatluna-search-service 的 browser 工具 */
+    usePuppeteerBrowser: boolean;
+    /** 是否启用 SearXNG 作为额外搜索源 */
+    useSearXNG: boolean;
+    /** SearXNG API 基础地址 */
+    searXNGApiBase: string;
+    /** SearXNG engines 参数（逗号分隔） */
+    searXNGEngines: string;
+    /** SearXNG categories 参数（逗号分隔） */
+    searXNGCategories: string;
+    /** SearXNG 返回结果数 */
+    searXNGNumResults: number;
 }
 /**
  * 插件配置 Schema
@@ -81,5 +155,7 @@ export interface Config {
     tof: TofConfig;
     /** Agent 工具配置 */
     agent: AgentToolConfig;
+    /** DeepSearch 配置 */
+    deepSearch: DeepSearchConfig;
 }
 export declare const Config: Schema<Config>;

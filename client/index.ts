@@ -2,7 +2,7 @@ import { Context } from '@koishijs/client'
 import { computed, defineComponent, inject, onBeforeUnmount, onMounted, type ComputedRef, watch, h } from 'vue'
 
 type NavSection = {
-  key: 'basic' | 'search' | 'output' | 'debug' | 'tool' | 'multi'
+  key: 'basic' | 'search' | 'output' | 'tool' | 'multi' | 'deep-search' | 'deep-llm' | 'deep-chatluna' | 'deep-searxng' | 'debug'
   title: string
 }
 
@@ -25,7 +25,6 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'basic', title: '基础设置' },
       { key: 'search', title: '搜索集成' },
       { key: 'output', title: '输出格式' },
-      { key: 'debug', title: '调试' },
     ],
   },
   {
@@ -33,6 +32,21 @@ const NAV_GROUPS: NavGroup[] = [
     sections: [
       { key: 'tool', title: 'Fact Check 工具' },
       { key: 'multi', title: '多源搜索配置' },
+    ],
+  },
+  {
+    title: 'DeepSearch',
+    sections: [
+      { key: 'deep-search', title: 'DeepSearch 迭代搜索' },
+      { key: 'deep-llm', title: 'LLM 搜索源' },
+      { key: 'deep-chatluna', title: 'Chatluna 搜索集成' },
+      { key: 'deep-searxng', title: 'SearXNG 搜索集成' },
+    ],
+  },
+  {
+    title: '调试',
+    sections: [
+      { key: 'debug', title: '调试' },
     ],
   },
 ] 

@@ -2,6 +2,7 @@
  * Prompt 模板集合
  */
 
+import type { DeepSearchHistory, SearchResult } from '../types'
 import { removeCensorshipBypass } from './url'
 
 // ============ 常量定义 ============
@@ -87,6 +88,74 @@ export const FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT = `你是事实核查搜索员
 1. 如果输入是完整断言（例如"某人做了某事"），按事实核查流程给出支持/反驳证据。
 2. 如果输入是关键词串（例如"日期 + 今日新闻 + 国际/国内/科技/娱乐"），将其视为"新闻检索任务"，直接给出当日要点摘要与来源，不要输出"这不是声明/不是事实主张"之类的元解释。
 3. 无论哪种输入，都优先给出可用信息与链接，避免空泛解释。`
+
+/**
+ * DeepSearch 主控系统提示词
+ */
+export const DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT = `你是 DeepSearch 主控模型，负责规划和协调多轮迭代搜索。
+
+任务要求：
+1. 分析待验证声明，识别关键实体、时间点和待核查点
+2. 每轮产出 1-4 个可并行执行的搜索任务
+3. 任务应覆盖不同角度和来源，避免重复关键词
+4. 输出必须是 JSON，不要输出额外说明
+
+输出格式：
+\`\`\`json
+{
+  "queries": [
+    {"query":"搜索词","provider":"grok","focus":"X/Twitter 讨论","useTool":"web_search"},
+    {"query":"搜索词","provider":"gemini","focus":"新闻与官方通报"},
+    {"query":"搜索词","focus":"多引擎聚合","useTool":"searxng","searxngConfig":{"engines":"google,bing,duckduckgo","categories":"general,news","numResults":8}}
+  ],
+  "rationale":"本轮计划理由"
+}
+\`\`\`
+
+可选 provider: grok | gemini | chatgpt | deepseek
+可选 useTool: web_search | browser | searxng`
+
+/**
+ * DeepSearch 评估系统提示词
+ */
+export const DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT = `你是 DeepSearch 评估模型，负责判断当前搜索结果是否足够支撑结论。
+
+评估维度：
+1. 来源多样性（是否多个独立来源）
+2. 信息一致性（是否相互印证）
+3. 证据强度（是否权威/一手来源）
+4. 覆盖度（关键疑点是否被覆盖）
+
+输出必须是 JSON，不要输出额外说明：
+\`\`\`json
+{
+  "shouldStop": true,
+  "reason": "判断理由",
+  "confidence": 0.78,
+  "gaps": ["仍需补充的信息"]
+}
+\`\`\``
+
+/**
+ * DeepSearch 综合系统提示词
+ */
+export const DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT = `你是 DeepSearch 综合报告模型。
+
+请基于全部轮次结果输出最终证据摘要（不做绝对化断言），突出：
+1. 最关键发现
+2. 主要来源
+3. 结论可信度
+
+输出必须是 JSON，不要输出额外说明：
+\`\`\`json
+{
+  "summary":"综合摘要",
+  "keyFindings":["关键发现1","关键发现2"],
+  "sources":["https://..."],
+  "confidence":0.72,
+  "conclusion":"当前可得结论"
+}
+\`\`\``
 
 // ============ System Prompts - 验证 Agent ============
 
@@ -176,6 +245,87 @@ export function buildFactCheckToolSearchPrompt(content: string): string {
 2. 优先使用权威来源（官方通报、主流媒体、机构网站）
 3. 输出精炼结论，避免讨论"输入文本本身是不是声明"
 4. 返回结构化 findings + sources + confidence`
+}
+
+function summarizeHistory(history?: DeepSearchHistory): string {
+  if (!history || history.rounds.length === 0) {
+    return '暂无历史轮次。'
+  }
+
+  const lines: string[] = []
+  for (const round of history.rounds.slice(-3)) {
+    lines.push(`第 ${round.round} 轮：${round.plan.rationale}`)
+    if (round.evaluation) {
+      lines.push(`评估：shouldStop=${round.evaluation.shouldStop}，confidence=${round.evaluation.confidence.toFixed(2)}，reason=${round.evaluation.reason}`)
+    }
+    const resultPreview = round.results.slice(0, 3).map((r, i) =>
+      `${i + 1}. ${r.perspective} | confidence=${r.confidence.toFixed(2)} | sources=${r.sources.length}`
+    )
+    if (resultPreview.length > 0) {
+      lines.push(`结果：\n${resultPreview.join('\n')}`)
+    }
+  }
+
+  return lines.join('\n')
+}
+
+function summarizeSearchResults(results: SearchResult[]): string {
+  if (!results.length) return '无结果'
+  return results.map((r, i) => {
+    const findings = r.findings.replace(/\s+/g, ' ').trim().slice(0, 300)
+    return `[${i + 1}] ${r.perspective}\nconfidence=${r.confidence.toFixed(2)}\nsources=${r.sources.slice(0, 5).join(', ') || '无'}\nfindings=${findings}`
+  }).join('\n\n')
+}
+
+/**
+ * 构建 DeepSearch 计划 Prompt
+ */
+export function buildDeepSearchPlanPrompt(claim: string, history?: DeepSearchHistory): string {
+  return `待验证声明：
+"${claim}"
+
+历史轮次信息：
+${summarizeHistory(history)}
+
+请生成下一轮搜索计划。要求：
+1. 查询词可直接执行，不要过长
+2. 每条任务必须有 focus
+3. 避免与历史完全重复
+4. 当需要多引擎聚合检索时可使用 useTool=searxng
+5. 仅输出 JSON`
+}
+
+/**
+ * 构建 DeepSearch 评估 Prompt
+ */
+export function buildDeepSearchEvaluatePrompt(
+  claim: string,
+  results: SearchResult[],
+  history?: DeepSearchHistory
+): string {
+  return `待验证声明：
+"${claim}"
+
+本轮搜索结果：
+${summarizeSearchResults(results)}
+
+历史轮次：
+${summarizeHistory(history)}
+
+请判断是否停止迭代，并按要求输出 JSON。`
+}
+
+/**
+ * 构建 DeepSearch 综合 Prompt
+ */
+export function buildDeepSearchSynthesizePrompt(claim: string, history: DeepSearchHistory): string {
+  return `待验证声明：
+"${claim}"
+
+全部轮次：
+${summarizeHistory(history)}
+
+请输出最终综合报告 JSON。`
 }
 
 /**

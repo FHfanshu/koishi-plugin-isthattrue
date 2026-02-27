@@ -32,8 +32,10 @@ export interface TofConfig {
   forwardMaxSegmentChars: number
   /** 是否显示详细过程 */
   verbose: boolean
-  /** 是否绕过代理 */
-  bypassProxy: boolean
+  /** HTTP 代理模式 */
+  proxyMode: 'follow-global' | 'direct' | 'custom'
+  /** 自定义 HTTP 代理地址（仅 custom 模式） */
+  proxyAddress: string
   /** 是否打印 LLM 请求体和响应 */
   logLLMDetails: boolean
 }
@@ -44,14 +46,34 @@ export interface TofConfig {
 export interface AgentToolConfig {
   /** 是否注册为 Chatluna 工具 */
   enable: boolean
-  /** 工具名称 */
+  /** 是否注册多源深度搜索工具（legacy，默认关闭，建议改用 deep_search） */
+  enableDeepTool: boolean
+  /** 是否注册快速搜索工具（默认作为 fact_check） */
+  enableQuickTool: boolean
+  /** 多源深度搜索工具名称（legacy） */
   name: string
-  /** 工具描述 */
+  /** 快速搜索工具名称 */
+  quickToolName: string
+  /** 多源深度搜索工具描述（legacy） */
   description: string
+  /** 快速搜索工具描述 */
+  quickToolDescription: string
   /** 工具输入最大长度 */
   maxInputChars: number
   /** 工具返回来源数量上限 */
   maxSources: number
+  /** Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel） */
+  quickToolModel: string
+  /** Gemini 快速搜索超时（毫秒） */
+  quickToolTimeout: number
+  /** 追加 Chatluna Search 上下文到 fact_check 工具输出 */
+  appendChatlunaSearchContext: boolean
+  /** 追加 Chatluna Search 上下文超时（毫秒） */
+  chatlunaSearchContextTimeout: number
+  /** 追加 Chatluna Search 上下文最大字符数 */
+  chatlunaSearchContextMaxChars: number
+  /** 追加 Chatluna Search 上下文来源数量上限 */
+  chatlunaSearchContextMaxSources: number
   /** 启用多源并行搜索 */
   enableMultiSourceSearch: boolean
   /** 启用 Grok 源 */
@@ -72,8 +94,61 @@ export interface AgentToolConfig {
   deepseekModel: string
   /** 每个来源超时（毫秒） */
   perSourceTimeout: number
+  /** 多源快速返回：最少成功来源数（达到即提前返回） */
+  fastReturnMinSuccess: number
+  /** 多源快速返回：最大等待时长（毫秒） */
+  fastReturnMaxWaitMs: number
   /** 每个来源输出最大长度 */
   maxFindingsChars: number
+}
+
+/**
+ * DeepSearch 配置
+ * 用于迭代搜索主控与 deep_search 工具
+ */
+export interface DeepSearchConfig {
+  /** 是否启用 DeepSearch 模式（主流程与工具注册） */
+  enable: boolean
+  /** 主控模型 */
+  controllerModel: string
+  /** 最大迭代轮数 */
+  maxIterations: number
+  /** 每轮超时（毫秒） */
+  perIterationTimeout: number
+  /** 最低置信度阈值（可选；留空时仅由 LLM 评估决定） */
+  minConfidenceThreshold: number | null
+  /** 最少来源数量阈值（可选；留空时仅由 LLM 评估决定） */
+  minSourcesThreshold: number | null
+  /** 启用 Grok 作为 DeepSearch LLM 搜索源 */
+  searchUseGrok: boolean
+  /** 启用 Gemini 作为 DeepSearch LLM 搜索源 */
+  searchUseGemini: boolean
+  /** 启用 ChatGPT 作为 DeepSearch LLM 搜索源 */
+  searchUseChatgpt: boolean
+  /** 启用 DeepSeek 作为 DeepSearch LLM 搜索源 */
+  searchUseDeepseek: boolean
+  /** Grok 模型（留空回退到 agent.grokModel/tof.searchModel） */
+  grokModel: string
+  /** Gemini 模型（留空回退到 agent.geminiModel/tof.searchModel） */
+  geminiModel: string
+  /** ChatGPT 模型（留空回退到 agent.chatgptModel/tof.searchModel） */
+  chatgptModel: string
+  /** DeepSeek 模型（留空回退到 agent.deepseekModel/tof.searchModel） */
+  deepseekModel: string
+  /** 允许使用 chatluna-search-service 的 web_search 工具 */
+  useChatlunaSearchTool: boolean
+  /** 允许使用 chatluna-search-service 的 browser 工具 */
+  usePuppeteerBrowser: boolean
+  /** 是否启用 SearXNG 作为额外搜索源 */
+  useSearXNG: boolean
+  /** SearXNG API 基础地址 */
+  searXNGApiBase: string
+  /** SearXNG engines 参数（逗号分隔） */
+  searXNGEngines: string
+  /** SearXNG categories 参数（逗号分隔） */
+  searXNGCategories: string
+  /** SearXNG 返回结果数 */
+  searXNGNumResults: number
 }
 
 /**
@@ -84,6 +159,8 @@ export interface Config {
   tof: TofConfig
   /** Agent 工具配置 */
   agent: AgentToolConfig
+  /** DeepSearch 配置 */
+  deepSearch: DeepSearchConfig
 }
 
 // Tof 命令配置 Schema
@@ -152,9 +229,14 @@ const tofOutputSchema = Schema.object({
 }).description('输出格式')
 
 const tofDebugSchema = Schema.object({
-  bypassProxy: Schema.boolean()
-    .default(false)
-    .description('是否绕过系统代理'),
+  proxyMode: Schema.union([
+    Schema.const('follow-global').description('遵循全局代理设置'),
+    Schema.const('direct').description('不使用代理（仅本插件的 HTTP 请求）'),
+    Schema.const('custom').description('使用自定义代理地址（仅本插件的 HTTP 请求）'),
+  ]).default('follow-global').description('HTTP 代理模式'),
+  proxyAddress: Schema.string()
+    .default('')
+    .description('自定义 HTTP 代理地址（例如 http://127.0.0.1:7890，仅 custom 模式生效）'),
   logLLMDetails: Schema.boolean()
     .default(false)
     .description('是否打印 LLM 请求体和响应详情 (Debug 用)'),
@@ -165,12 +247,24 @@ const agentToolSchema = Schema.object({
   enable: Schema.boolean()
     .default(true)
     .description('开启：注册事实核查为 Chatluna 可调用工具'),
+  enableDeepTool: Schema.boolean()
+    .default(false)
+    .description('开启：注册多源深度搜索工具（legacy，默认关闭，建议使用 deep_search）'),
+  enableQuickTool: Schema.boolean()
+    .default(true)
+    .description('开启：注册快速网络搜索工具（默认工具名为 fact_check）'),
   name: Schema.string()
+    .default('fact_check_deep')
+    .description('多源深度搜索工具名称（legacy，建议避免与 fact_check 重名）'),
+  quickToolName: Schema.string()
     .default('fact_check')
-    .description('Chatluna 工具名称（需与预设中提及名称一致）'),
+    .description('快速搜索工具名称（建议保持 fact_check）'),
   description: Schema.string()
-    .default('用于 LLM 网络搜索（作为 chatluna-search 的 LLMSearch 替代）。输入待核查文本，返回多源搜索结果与来源链接（可配置 Grok/Gemini/ChatGPT/DeepSeek），由上层 Agent 自行判断。')
-    .description('Chatluna 工具描述，建议明确该工具只提供证据不做最终裁决'),
+    .default('【Legacy】用于多源并行深度搜索。建议优先使用 deep_search 工具进行可迭代深搜。')
+    .description('多源深度搜索工具描述（legacy）'),
+  quickToolDescription: Schema.string()
+    .default('用于快速网络搜索。输入待核查文本，返回来源与摘要，适合作为常规 fact_check 工具。')
+    .description('快速搜索工具描述'),
   maxInputChars: Schema.number()
     .min(100)
     .max(10000)
@@ -181,6 +275,32 @@ const agentToolSchema = Schema.object({
     .max(20)
     .default(5)
     .description('Chatluna 工具返回来源链接数量上限'),
+  quickToolModel: Schema.dynamic('model')
+    .default('')
+    .description('Gemini 快速搜索模型（留空时回退 geminiModel/chatlunaSearchModel）'),
+  quickToolTimeout: Schema.number()
+    .min(3000)
+    .max(120000)
+    .default(15000)
+    .description('Gemini 快速搜索超时（毫秒）'),
+  appendChatlunaSearchContext: Schema.boolean()
+    .default(false)
+    .description('为 fact_check 工具追加 Chatluna Search Service 上下文（可选）'),
+  chatlunaSearchContextTimeout: Schema.number()
+    .min(3000)
+    .max(120000)
+    .default(12000)
+    .description('追加 Chatluna Search 上下文超时（毫秒）'),
+  chatlunaSearchContextMaxChars: Schema.number()
+    .min(200)
+    .max(8000)
+    .default(1200)
+    .description('追加 Chatluna Search 上下文最大字符数'),
+  chatlunaSearchContextMaxSources: Schema.number()
+    .min(1)
+    .max(20)
+    .default(5)
+    .description('追加 Chatluna Search 上下文来源数量上限'),
 }).description('Fact Check 工具')
 
 const agentMultiSourceSchema = Schema.object({
@@ -216,6 +336,16 @@ const agentMultiSourceSchema = Schema.object({
     .max(180000)
     .default(45000)
     .description('fact_check 多源模式下每个来源的独立超时时间（毫秒）'),
+  fastReturnMinSuccess: Schema.number()
+    .min(1)
+    .max(8)
+    .default(2)
+    .description('fact_check 多源模式：达到该成功来源数后提前返回'),
+  fastReturnMaxWaitMs: Schema.number()
+    .min(1000)
+    .max(120000)
+    .default(12000)
+    .description('fact_check 多源模式：最大等待时长（毫秒），达到后提前返回'),
   maxFindingsChars: Schema.number()
     .min(200)
     .max(8000)
@@ -223,17 +353,112 @@ const agentMultiSourceSchema = Schema.object({
     .description('fact_check 输出中每个来源 findings 的最大字符数'),
 }).description('多源搜索配置')
 
+const deepSearchCoreSchema = Schema.object({
+  enable: Schema.boolean()
+    .default(false)
+    .description('启用 DeepSearch 迭代搜索模式（同时注册 deep_search 工具）'),
+  controllerModel: Schema.dynamic('model')
+    .default('google/gemini-3-flash')
+    .description('DeepSearch 主控模型（用于规划、评估、综合）'),
+  maxIterations: Schema.number()
+    .min(1)
+    .max(8)
+    .default(3)
+    .description('DeepSearch 最大迭代轮数'),
+  perIterationTimeout: Schema.number()
+    .min(5000)
+    .max(180000)
+    .default(30000)
+    .description('DeepSearch 每轮超时（毫秒）'),
+  minConfidenceThreshold: Schema.union([
+    Schema.number().min(0).max(1).description('最低置信度阈值'),
+    Schema.const(null).description('不限制'),
+  ])
+    .default(null)
+    .description('可选：最低置信度阈值（留空则仅按 LLM 评估）'),
+  minSourcesThreshold: Schema.union([
+    Schema.number().min(1).max(20).description('最少来源数量阈值'),
+    Schema.const(null).description('不限制'),
+  ])
+    .default(null)
+    .description('可选：最少来源数量阈值（留空则仅按 LLM 评估）'),
+}).description('DeepSearch 迭代搜索')
+
+const deepSearchLLMSourceSchema = Schema.object({
+  searchUseGrok: Schema.boolean()
+    .default(true)
+    .description('DeepSearch LLM 搜索源包含 Grok'),
+  searchUseGemini: Schema.boolean()
+    .default(true)
+    .description('DeepSearch LLM 搜索源包含 Gemini'),
+  searchUseChatgpt: Schema.boolean()
+    .default(false)
+    .description('DeepSearch LLM 搜索源包含 ChatGPT'),
+  searchUseDeepseek: Schema.boolean()
+    .default(false)
+    .description('DeepSearch LLM 搜索源包含 DeepSeek'),
+  grokModel: Schema.dynamic('model')
+    .default('')
+    .description('Grok 模型（留空回退 agent.grokModel/tof.searchModel）'),
+  geminiModel: Schema.dynamic('model')
+    .default('')
+    .description('Gemini 模型（留空回退 agent.geminiModel/tof.searchModel）'),
+  chatgptModel: Schema.dynamic('model')
+    .default('')
+    .description('ChatGPT 模型（留空回退 agent.chatgptModel/tof.searchModel）'),
+  deepseekModel: Schema.dynamic('model')
+    .default('')
+    .description('DeepSeek 模型（留空回退 agent.deepseekModel/tof.searchModel）'),
+}).description('LLM 搜索源')
+
+const deepSearchChatlunaIntegrationSchema = Schema.object({
+  useChatlunaSearchTool: Schema.boolean()
+    .default(true)
+    .description('优先尝试调用 web_search 工具执行迭代搜索'),
+  usePuppeteerBrowser: Schema.boolean()
+    .default(false)
+    .description('允许主控计划调用 browser 工具抓取页面'),
+}).description('Chatluna 搜索集成')
+
+const deepSearchSearXNGSchema = Schema.object({
+  useSearXNG: Schema.boolean()
+    .default(false)
+    .description('启用 SearXNG 元搜索作为 DeepSearch 的额外来源'),
+  searXNGApiBase: Schema.string()
+    .default('http://127.0.0.1:8080')
+    .description('SearXNG API 基础地址（例如 http://127.0.0.1:8080）'),
+  searXNGEngines: Schema.string()
+    .default('google,bing,duckduckgo')
+    .description('SearXNG engines 参数，逗号分隔'),
+  searXNGCategories: Schema.string()
+    .default('general')
+    .description('SearXNG categories 参数，逗号分隔'),
+  searXNGNumResults: Schema.number()
+    .min(1)
+    .max(50)
+    .default(10)
+    .description('SearXNG 返回结果数'),
+}).description('SearXNG 搜索集成')
+
 export const Config = Schema.intersect([
   Schema.object({
     tof: Schema.intersect([
       tofConfigSchema,
       tofSearchSchema,
       tofOutputSchema,
-      tofDebugSchema,
     ]).description('Tof 命令配置'),
     agent: Schema.intersect([
       agentToolSchema,
       agentMultiSourceSchema,
     ]).description('Agent 工具配置'),
+    deepSearch: Schema.intersect([
+      deepSearchCoreSchema,
+      deepSearchLLMSourceSchema,
+      deepSearchChatlunaIntegrationSchema,
+      deepSearchSearXNGSchema,
+    ]).description('DeepSearch 配置'),
+  }),
+  Schema.object({
+    tof: tofDebugSchema,
   }),
 ]) as unknown as Schema<Config>

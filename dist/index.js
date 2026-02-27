@@ -1,5 +1,5 @@
-import { defineComponent as M, inject as T, computed as N, onMounted as A, watch as I, onBeforeUnmount as z, h as F } from "vue";
-const O = /* @__PURE__ */ new Set([
+import { defineComponent as M, inject as T, computed as N, onMounted as A, watch as I, onBeforeUnmount as z, h as D } from "vue";
+const F = /* @__PURE__ */ new Set([
   "isthattrue",
   "chatluna-fact-check",
   "koishi-plugin-isthattrue",
@@ -10,8 +10,7 @@ const O = /* @__PURE__ */ new Set([
     sections: [
       { key: "basic", title: "基础设置" },
       { key: "search", title: "搜索集成" },
-      { key: "output", title: "输出格式" },
-      { key: "debug", title: "调试" }
+      { key: "output", title: "输出格式" }
     ]
   },
   {
@@ -20,12 +19,27 @@ const O = /* @__PURE__ */ new Set([
       { key: "tool", title: "Fact Check 工具" },
       { key: "multi", title: "多源搜索配置" }
     ]
+  },
+  {
+    title: "DeepSearch",
+    sections: [
+      { key: "deep-search", title: "DeepSearch 迭代搜索" },
+      { key: "deep-llm", title: "LLM 搜索源" },
+      { key: "deep-chatluna", title: "Chatluna 搜索集成" },
+      { key: "deep-searxng", title: "SearXNG 搜索集成" }
+    ]
+  },
+  {
+    title: "调试",
+    sections: [
+      { key: "debug", title: "调试" }
+    ]
   }
-], L = C.flatMap((t) => t.sections), E = "isthattrue-nav-style";
-function q() {
-  if (document.getElementById(E)) return;
+], w = C.flatMap((t) => t.sections), S = "isthattrue-nav-style";
+function O() {
+  if (document.getElementById(S)) return;
   const t = document.createElement("style");
-  t.id = E, t.textContent = `
+  t.id = S, t.textContent = `
 .isthattrue-nav {
   position: fixed;
   top: 260px;
@@ -97,13 +111,13 @@ function q() {
 function d(t) {
   return t.replace(/\s+/g, "").trim();
 }
-function S() {
+function E() {
   return Array.from(document.querySelectorAll(
     ".k-schema-section-title, .k-schema-header, h2.k-schema-header"
   ));
 }
-function D(t) {
-  const e = d(t), o = S();
+function q(t) {
+  const e = d(t), o = E();
   for (const s of o) {
     const l = d(s.textContent || "");
     if (l && l.includes(e))
@@ -112,7 +126,7 @@ function D(t) {
   return null;
 }
 function U() {
-  q();
+  O();
   const t = document.querySelector(".isthattrue-nav");
   t == null || t.remove();
   const e = document.createElement("div");
@@ -130,7 +144,7 @@ function U() {
     for (const i of n.sections) {
       const a = document.createElement("button");
       a.type = "button", a.className = "isthattrue-nav-item", a.textContent = i.title, a.addEventListener("click", () => {
-        const u = D(i.title);
+        const u = q(i.title);
         u && u.scrollIntoView({ behavior: "smooth", block: "start" });
       }), o.appendChild(a), p.set(i.key, a);
     }
@@ -151,15 +165,15 @@ function U() {
     n.target.closest(".isthattrue-nav-toggle") || (n.preventDefault(), g = n.clientX, f = n.clientY, x = parseFloat(e.style.right || "60"), y = parseFloat(e.style.top || "260"), document.addEventListener("mousemove", h), document.addEventListener("mouseup", m));
   });
   let c = null;
-  const b = () => {
+  const k = () => {
     c == null || c.disconnect(), c = new IntersectionObserver((r) => {
       var i;
       for (const a of r) {
         if (!a.isIntersecting) continue;
-        const u = (a.target.textContent || "").trim(), w = L.find((v) => u.includes(v.title));
-        if (w) {
+        const u = (a.target.textContent || "").trim(), L = w.find((v) => u.includes(v.title));
+        if (L) {
           for (const v of p.values()) v.classList.remove("active");
-          (i = p.get(w.key)) == null || i.classList.add("active");
+          (i = p.get(L.key)) == null || i.classList.add("active");
           break;
         }
       }
@@ -168,38 +182,38 @@ function U() {
       rootMargin: "-20% 0px -60% 0px",
       threshold: 0
     });
-    const n = S();
+    const n = E();
     for (const r of n) {
       const i = d(r.textContent || "");
-      L.some((a) => i.includes(d(a.title))) && c.observe(r);
+      w.some((a) => i.includes(d(a.title))) && c.observe(r);
     }
-  }, k = new MutationObserver(() => {
-    window.setTimeout(b, 200);
+  }, b = new MutationObserver(() => {
+    window.setTimeout(k, 200);
   });
-  return k.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(b, 300), () => {
-    c == null || c.disconnect(), k.disconnect(), document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m), e.remove();
+  return b.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(k, 300), () => {
+    c == null || c.disconnect(), b.disconnect(), document.removeEventListener("mousemove", h), document.removeEventListener("mouseup", m), e.remove();
   };
 }
-const Y = M({
+const X = M({
   name: "FactCheckDetailsLoader",
   setup() {
     const t = T("plugin:name"), e = N(() => {
       const l = t == null ? void 0 : t.value;
-      return !!l && O.has(l);
+      return !!l && F.has(l);
     });
     let o = null;
     const s = () => {
       o == null || o(), o = null, e.value && (o = U());
     };
-    return A(s), I(e, s), z(() => o == null ? void 0 : o()), () => F("div", { style: { display: "none" } });
+    return A(s), I(e, s), z(() => o == null ? void 0 : o()), () => D("div", { style: { display: "none" } });
   }
-}), B = (t) => {
+}), _ = (t) => {
   t.slot({
     type: "plugin-details",
-    component: Y,
+    component: X,
     order: -999
   });
 };
 export {
-  B as default
+  _ as default
 };
