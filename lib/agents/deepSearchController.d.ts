@@ -1,0 +1,31 @@
+import { ChatlunaAdapter } from '../services/chatluna';
+import type { DeepSearchReport, PluginConfig } from '../types';
+type Ctx = any;
+export declare class DeepSearchController {
+    private readonly ctx;
+    private readonly config;
+    private readonly logger;
+    private readonly searchAgent;
+    private readonly chatlunaAdapter;
+    constructor(ctx: Ctx, config: PluginConfig, chatlunaAdapter?: ChatlunaAdapter);
+    search(claim: string): Promise<DeepSearchReport>;
+    private plan;
+    private evaluate;
+    private synthesize;
+    private runRound;
+    private executePlan;
+    private shouldStop;
+    private parseSearchPlan;
+    private parseEvaluation;
+    private parseFinalReport;
+    private buildFallbackEvaluation;
+    private buildFallbackReport;
+    private collectTopFindings;
+    private collectAllSources;
+    private estimateConfidence;
+    private clampConfidence;
+    private parseJson;
+    private parseProvider;
+    private parseUseTool;
+}
+export {};
