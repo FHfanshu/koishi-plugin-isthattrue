@@ -14,6 +14,12 @@ export declare class DeepSearchController {
     private synthesize;
     private runRound;
     private executePlan;
+    private buildExecutionFailureResult;
+    private normalizePrimaryQuery;
+    private getProviderPriorityOrder;
+    private launchGrokSupplementalQuery;
+    private getGrokSupplementalTimeoutMs;
+    private observePromise;
     private shouldStop;
     private parseSearchPlan;
     private parseEvaluation;

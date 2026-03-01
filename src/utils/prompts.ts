@@ -90,9 +90,9 @@ export const DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT = `你是 DeepSearch 主控模
 \`\`\`json
 {
   "queries": [
-    {"query":"搜索词","provider":"grok","focus":"X/Twitter 讨论","useTool":"web_search"},
-    {"query":"搜索词","provider":"gemini","focus":"新闻与官方通报"},
-    {"query":"搜索词","provider":"ollama","focus":"Ollama Search 聚合"}
+    {"query":"搜索词","provider":"gemini","focus":"新闻与官方通报","useTool":"web_search"},
+    {"query":"搜索词","provider":"ollama","focus":"Ollama Search 聚合","useTool":"ollama_search"},
+    {"query":"搜索词","provider":"grok","focus":"X/Twitter 讨论（慢速补充）"}
   ],
   "rationale":"本轮计划理由"
 }
@@ -261,8 +261,9 @@ ${summarizeHistory(history)}
 2. 每条任务必须有 focus
 3. 避免与历史完全重复
 4. 优先使用 useTool=web_search 或 useTool=browser 获取一手网页证据
-5. 需要 Ollama 搜索时可使用 provider=ollama 或 useTool=ollama_search
-6. 仅输出 JSON`;
+5. provider 优先 gemini 或 ollama；grok 仅在需要补充社交媒体证据时使用
+6. 需要 Ollama 搜索时可使用 provider=ollama 或 useTool=ollama_search
+7. 仅输出 JSON`;
 }
 /**
  * 构建 DeepSearch 评估 Prompt

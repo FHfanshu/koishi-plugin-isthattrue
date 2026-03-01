@@ -3,7 +3,6 @@ import { Schema } from 'koishi'
 import type { PluginConfig } from './types'
 
 const factCheckDebugSchema = Schema.object({
-  timeout: Schema.number().min(10_000).max(300_000).default(60_000).description('单次请求超时时间 (毫秒)'),
   maxRetries: Schema.number().min(0).max(5).default(2).description('失败重试次数'),
   proxyMode: Schema.union([
     Schema.const('follow-global').description('遵循全局代理设置'),
@@ -21,31 +20,26 @@ const agentToolSchema = Schema.object({
   quickToolDescription: Schema.string().default('用于快速网络搜索。输入待核查文本，返回来源与摘要，适合作为常规 fact_check 工具。').description('快速搜索工具描述'),
   maxInputChars: Schema.number().min(100).max(10_000).default(1_200).description('Chatluna 工具单次输入文本最大字符数'),
   maxSources: Schema.number().min(1).max(20).default(5).description('Chatluna 工具返回来源链接数量上限'),
-  quickToolModel: Schema.dynamic('model').default('').description('Gemini 快速搜索模型（留空时回退 geminiModel）'),
-  quickToolTimeout: Schema.number().min(3_000).max(120_000).default(15_000).description('Gemini 快速搜索超时（毫秒）'),
 }).description('Fact Check 工具')
 
 const agentSearchSchema = Schema.object({
   // — 多源并行搜索 —
   enableMultiSourceSearch: Schema.boolean().default(true).description('Agent 调用 fact_check 时，启用多源并行搜索'),
-  grokModel: Schema.dynamic('model').default('x-ai/grok-4-1').description('Grok 来源模型（留空则跳过 Grok 来源）'),
-  geminiModel: Schema.dynamic('model').default('').description('Gemini 来源模型（留空则跳过 Gemini 来源）'),
-  chatgptModel: Schema.dynamic('model').default('').description('ChatGPT 来源模型（留空则跳过 ChatGPT 来源）'),
-  ollamaSearchMaxResults: Schema.number().min(1).max(10).default(5).description('Ollama Search 返回结果数'),
-  ollamaSearchTimeout: Schema.number().min(3_000).max(120_000).default(15_000).description('Ollama Search 超时（毫秒）'),
+  grokModel: Schema.dynamic('model').default('x-ai/grok-4-1').description('Grok 来源模型（FactCheck 与 DeepSearch 共用，留空则跳过 Grok 来源）'),
+  geminiModel: Schema.dynamic('model').default('').description('Gemini 来源模型（FactCheck 与 DeepSearch 共用，留空则跳过 Gemini 来源）'),
+  chatgptModel: Schema.dynamic('model').default('').description('ChatGPT 来源模型（FactCheck 与 DeepSearch 共用，留空则跳过 ChatGPT 来源）'),
+  ollamaSearchMaxResults: Schema.number().min(1).max(10).default(5).description('Ollama Search 返回结果数（FactCheck 与 DeepSearch 共用）'),
+  ollamaSearchTimeout: Schema.number().min(3_000).max(120_000).default(15_000).description('Ollama Search 超时（毫秒，FactCheck 与 DeepSearch 共用）'),
   perSourceTimeout: Schema.number().min(5_000).max(180_000).default(45_000).description('fact_check 多源模式下每个来源的独立超时时间（毫秒）'),
   fastReturnMinSuccess: Schema.number().min(1).max(8).default(2).description('fact_check 多源模式：达到该成功来源数后提前返回'),
   fastReturnMaxWaitMs: Schema.number().min(1_000).max(120_000).default(12_000).description('fact_check 多源模式：最大等待时长（毫秒），达到后提前返回'),
   maxFindingsChars: Schema.number().min(200).max(8_000).default(2_000).description('fact_check 输出中每个来源 findings 的最大字符数'),
   // — 搜索源上下文注入 —
   appendChatlunaSearchContext: Schema.boolean().default(false).description('为 fact_check 输出追加 Chatluna Search 上下文（仅附加参考，不改变最终判定流程）'),
-  chatlunaSearchContextTimeout: Schema.number().min(3_000).max(120_000).default(12_000).description('Chatluna Search 上下文查询超时（毫秒）；超时仅跳过附加上下文'),
-  chatlunaSearchContextMaxChars: Schema.number().min(200).max(8_000).default(1_200).description('附加的 Chatluna Search 上下文最大字符数（防止输出过长）'),
-  chatlunaSearchContextMaxSources: Schema.number().min(1).max(20).default(5).description('附加的 Chatluna Search 来源数量上限'),
   appendOllamaSearchContext: Schema.boolean().default(false).description('为 fact_check 输出追加 Ollama Search 上下文（仅附加参考，不改变最终判定流程）'),
-  ollamaSearchContextTimeout: Schema.number().min(3_000).max(120_000).default(12_000).description('Ollama Search 上下文查询超时（毫秒）；超时仅跳过附加上下文'),
-  ollamaSearchContextMaxChars: Schema.number().min(200).max(8_000).default(1_200).description('附加的 Ollama Search 上下文最大字符数（防止输出过长）'),
-  ollamaSearchContextMaxSources: Schema.number().min(1).max(20).default(5).description('附加的 Ollama Search 来源数量上限'),
+  searchContextTimeout: Schema.number().min(3_000).max(120_000).default(12_000).description('搜索上下文查询超时（毫秒）；超时仅跳过附加上下文，Chatluna/Ollama 共用'),
+  searchContextMaxChars: Schema.number().min(200).max(8_000).default(1_200).description('附加的搜索上下文最大字符数，Chatluna/Ollama 共用'),
+  searchContextMaxSources: Schema.number().min(1).max(20).default(5).description('附加的搜索来源数量上限，Chatluna/Ollama 共用'),
 }).description('搜索配置')
 
 const deepSearchCoreSchema = Schema.object({
@@ -67,14 +61,6 @@ const deepSearchCoreSchema = Schema.object({
   ]).default(null).description('可选：最少来源数量阈值（留空则仅按 LLM 评估）'),
 }).description('迭代搜索')
 
-const deepSearchLLMSourceSchema = Schema.object({
-  grokModel: Schema.dynamic('model').default('x-ai/grok-4-1').description('Grok 模型（留空则跳过 Grok 源）'),
-  geminiModel: Schema.dynamic('model').default('').description('Gemini 模型（留空则跳过 Gemini 源）'),
-  chatgptModel: Schema.dynamic('model').default('').description('ChatGPT 模型（留空则跳过 ChatGPT 源）'),
-  ollamaSearchMaxResults: Schema.number().min(1).max(10).default(5).description('Ollama Search 返回结果数'),
-  ollamaSearchTimeout: Schema.number().min(3_000).max(120_000).default(15_000).description('Ollama Search 超时（毫秒）'),
-}).description('搜索源')
-
 const deepSearchChatlunaIntegrationSchema = Schema.object({
   useChatlunaSearchTool: Schema.boolean().default(true).description('优先尝试调用 web_search 工具执行迭代搜索'),
   usePuppeteerBrowser: Schema.boolean().default(false).description('允许主控计划调用 browser 工具抓取页面'),
@@ -90,7 +76,7 @@ export const Config: Schema<PluginConfig> = Schema.intersect([
   Schema.object({
     api: apiUnifiedSchema,
     factCheck: Schema.intersect([agentToolSchema, agentSearchSchema]).description('FactCheck 基础'),
-    deepSearch: Schema.intersect([deepSearchCoreSchema, deepSearchLLMSourceSchema, deepSearchChatlunaIntegrationSchema]).description('DeepSearch'),
+    deepSearch: Schema.intersect([deepSearchCoreSchema, deepSearchChatlunaIntegrationSchema]).description('DeepSearch'),
     debug: factCheckDebugSchema.description('调试与排障'),
   }),
 ]) as Schema<PluginConfig>

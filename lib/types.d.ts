@@ -18,16 +18,11 @@ export interface AgentConfig {
     quickToolDescription: string;
     maxInputChars: number;
     maxSources: number;
-    quickToolModel: string;
-    quickToolTimeout: number;
     appendChatlunaSearchContext: boolean;
-    chatlunaSearchContextTimeout: number;
-    chatlunaSearchContextMaxChars: number;
-    chatlunaSearchContextMaxSources: number;
     appendOllamaSearchContext: boolean;
-    ollamaSearchContextTimeout: number;
-    ollamaSearchContextMaxChars: number;
-    ollamaSearchContextMaxSources: number;
+    searchContextTimeout: number;
+    searchContextMaxChars: number;
+    searchContextMaxSources: number;
     enableMultiSourceSearch: boolean;
     grokModel: string;
     geminiModel: string;
@@ -50,17 +45,11 @@ export interface DeepSearchConfig {
     perIterationTimeout: number;
     minConfidenceThreshold: number | null;
     minSourcesThreshold: number | null;
-    grokModel: string;
-    geminiModel: string;
-    chatgptModel: string;
-    ollamaSearchMaxResults: number;
-    ollamaSearchTimeout: number;
     useChatlunaSearchTool: boolean;
     usePuppeteerBrowser: boolean;
 }
 export type ProxyMode = 'follow-global' | 'direct' | 'custom';
 export interface FactCheckConfig {
-    timeout: number;
     maxRetries: number;
     proxyMode: ProxyMode;
     proxyAddress: string;

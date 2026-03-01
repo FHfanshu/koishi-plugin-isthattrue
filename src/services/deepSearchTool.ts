@@ -212,7 +212,13 @@ export function registerDeepSearchTool(ctx: Ctx, config: PluginConfig): void {
     logger.info(`[DeepSearchTool] 注册工具: ${DEEP_SEARCH_TOOL_NAME}`)
     const dispose = chatluna.platform.registerTool(DEEP_SEARCH_TOOL_NAME, {
       createTool() {
-        return new DeepSearchTool(ctx, config, taskService)
+        const tool = new DeepSearchTool(ctx, config, taskService)
+        const resolvedName = typeof tool.name === 'string' ? tool.name.trim() : ''
+        if (!resolvedName) {
+          ;(tool as any).name = DEEP_SEARCH_TOOL_NAME
+          logger.warn(`[DeepSearchTool] 检测到空工具名，已回退为 ${DEEP_SEARCH_TOOL_NAME}`)
+        }
+        return tool
       },
       selector() {
         return true

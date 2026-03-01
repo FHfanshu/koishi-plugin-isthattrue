@@ -104,7 +104,11 @@ export class IterativeSearchAgent {
   private async invokeTool(tool: any, input: unknown): Promise<unknown> {
     const runnableConfig = {
       configurable: {
-        model: this.config.deepSearch.controllerModel?.trim() || this.config.factCheck.grokModel,
+        model:
+          this.config.deepSearch.controllerModel?.trim()
+          || this.config.factCheck.geminiModel?.trim()
+          || this.config.factCheck.grokModel?.trim()
+          || this.config.factCheck.grokModel,
       },
     }
 
@@ -188,10 +192,10 @@ ${focus}
 
   private getEnabledProviders(): ProviderKey[] {
     const providers: ProviderKey[] = []
-    if (this.config.deepSearch.grokModel?.trim()) providers.push('grok')
-    if (this.config.deepSearch.geminiModel?.trim()) providers.push('gemini')
-    if (this.config.deepSearch.chatgptModel?.trim()) providers.push('chatgpt')
+    if (this.config.factCheck.geminiModel?.trim()) providers.push('gemini')
     if (isOllamaEnabled(this.config)) providers.push('ollama')
+    if (this.config.factCheck.grokModel?.trim()) providers.push('grok')
+    if (this.config.factCheck.chatgptModel?.trim()) providers.push('chatgpt')
     return providers
   }
 
@@ -215,11 +219,11 @@ ${focus}
   private getModelName(provider: ProviderKey): string {
     switch (provider) {
       case 'grok':
-        return this.config.deepSearch.grokModel?.trim() || ''
+        return this.config.factCheck.grokModel?.trim() || ''
       case 'gemini':
-        return this.config.deepSearch.geminiModel?.trim() || ''
+        return this.config.factCheck.geminiModel?.trim() || ''
       case 'chatgpt':
-        return this.config.deepSearch.chatgptModel?.trim() || ''
+        return this.config.factCheck.chatgptModel?.trim() || ''
       case 'ollama':
         return 'ollama-search-api'
       default:

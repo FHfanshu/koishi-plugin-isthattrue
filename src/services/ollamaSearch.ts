@@ -94,18 +94,9 @@ export class OllamaSearchService {
   }
 
   private getSettings(scope: SearchScope): OllamaSearchSettings {
-    if (scope === 'deepsearch') {
-      return {
-        apiBase: resolveOllamaApiBase(this.config, 'deepsearch'),
-        apiKey: resolveOllamaApiKey(this.config, 'deepsearch'),
-        maxResults: Math.max(1, Math.min(this.config.deepSearch.ollamaSearchMaxResults || 5, 10)),
-        timeout: Math.max(3000, Math.min(this.config.deepSearch.ollamaSearchTimeout || 15_000, 120_000)),
-      }
-    }
-
     return {
-      apiBase: resolveOllamaApiBase(this.config, 'agent'),
-      apiKey: resolveOllamaApiKey(this.config, 'agent'),
+      apiBase: resolveOllamaApiBase(this.config, scope),
+      apiKey: resolveOllamaApiKey(this.config, scope),
       maxResults: Math.max(1, Math.min(this.config.factCheck.ollamaSearchMaxResults || 5, 10)),
       timeout: Math.max(3000, Math.min(this.config.factCheck.ollamaSearchTimeout || 15_000, 120_000)),
     }

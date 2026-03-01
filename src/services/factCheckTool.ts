@@ -56,15 +56,13 @@ class FactCheckTool extends Tool {
   }
 
   private getQuickProvider(): ToolProvider | null {
-    const explicit = this.config.factCheck.quickToolModel?.trim()
     const gemini = this.config.factCheck.geminiModel?.trim()
-    const fallback = explicit || gemini
-    if (!fallback) return null
+    if (!gemini) return null
 
     return {
       key: 'gemini',
       label: 'GeminiWebSearch',
-      model: fallback,
+      model: gemini,
     }
   }
 
@@ -211,12 +209,12 @@ ${sourceText}`
   private formatChatlunaSearchContext(result: AgentSearchResult): string {
     const findings = truncate(
       result.findings,
-      Math.min(this.config.factCheck.chatlunaSearchContextMaxChars, 500),
+      Math.min(this.config.factCheck.searchContextMaxChars, 500),
       '无可用搜索结果'
     )
 
     const totalSourceCount = result.sources.length
-    const sources = result.sources.slice(0, this.config.factCheck.chatlunaSearchContextMaxSources)
+    const sources = result.sources.slice(0, this.config.factCheck.searchContextMaxSources)
     const domains = this.extractSourceDomains(result.sources)
     const domainPreview = domains.length > 0 ? domains.slice(0, 10).join(', ') : '无'
     const sourceText = sources.length > 0 ? sources.map((s) => `- ${s}`).join('\n') : '- 无'
@@ -265,7 +263,7 @@ ${sourceText}`
       this.logger.info('[ChatlunaTool] ChatlunaSearchContext: invoking chatluna-search-service')
       const searchResult = await withTimeout(
         chatlunaSearchAgent.search(claim),
-        this.config.factCheck.chatlunaSearchContextTimeout,
+        this.config.factCheck.searchContextTimeout,
         'ChatlunaSearchContext'
       )
 
@@ -291,12 +289,12 @@ ${sourceText}`
   private formatOllamaSearchContext(result: AgentSearchResult): string {
     const findings = truncate(
       result.findings,
-      Math.min(this.config.factCheck.ollamaSearchContextMaxChars, 500),
+      Math.min(this.config.factCheck.searchContextMaxChars, 500),
       '无可用搜索结果'
     )
 
     const totalSourceCount = result.sources.length
-    const sources = result.sources.slice(0, this.config.factCheck.ollamaSearchContextMaxSources)
+    const sources = result.sources.slice(0, this.config.factCheck.searchContextMaxSources)
     const domains = this.extractSourceDomains(result.sources)
     const domainPreview = domains.length > 0 ? domains.slice(0, 10).join(', ') : '无'
     const sourceText = sources.length > 0 ? sources.map((s) => `- ${s}`).join('\n') : '- 无'
@@ -320,7 +318,7 @@ ${sourceText}`
     try {
       const searchResult = await withTimeout(
         this.ollamaSearchService.search(claim, 'Ollama Search 上下文', 'agent'),
-        this.config.factCheck.ollamaSearchContextTimeout,
+        this.config.factCheck.searchContextTimeout,
         'OllamaSearchContext'
       )
 
@@ -377,9 +375,7 @@ ${sourceText}`
 
       if (!this.config.factCheck.enableMultiSourceSearch || providers.length === 1) {
         const provider = providers[0]
-        const timeout = this.config.factCheck.enableMultiSourceSearch
-          ? this.config.factCheck.perSourceTimeout
-          : this.config.factCheck.quickToolTimeout
+        const timeout = this.config.factCheck.perSourceTimeout
 
         const result = await withTimeout(
           provider.key === 'ollama'
@@ -531,7 +527,13 @@ export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
 
       const disposeQuick = chatluna.platform.registerTool(quickToolName, {
         createTool() {
-          return new FactCheckTool(ctx, config, quickToolName, quickToolDescription)
+          const tool = new FactCheckTool(ctx, config, quickToolName, quickToolDescription)
+          const resolvedName = typeof tool.name === 'string' ? tool.name.trim() : ''
+          if (!resolvedName) {
+            ;(tool as any).name = 'fact_check'
+            logger.warn('[ChatlunaTool] 检测到空工具名，已回退为 fact_check')
+          }
+          return tool
         },
         selector() {
           return true

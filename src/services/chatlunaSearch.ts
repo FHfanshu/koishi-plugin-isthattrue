@@ -119,7 +119,7 @@ export class ChatlunaSearchAgent {
       || 'unknown'
 
     const shortModelName = modelName.includes('/') ? modelName.split('/').pop() : modelName
-    const perQueryTimeout = Math.max(3000, Math.min(this.config.debug.timeout || 60_000, 120_000))
+    const perQueryTimeout = Math.max(3000, Math.min(this.config.factCheck.perSourceTimeout || 45_000, 120_000))
     this.logger.info(`[ChatlunaSearch] 开始搜索，模型: ${modelName}`)
 
     try {

@@ -1,5 +1,5 @@
-import { defineComponent as I, inject as A, computed as M, onMounted as P, watch as T, onBeforeUnmount as N, h as D } from "vue";
-const B = /* @__PURE__ */ new Set([
+import { defineComponent as I, inject as A, computed as P, onMounted as T, watch as M, onBeforeUnmount as N, h as B } from "vue";
+const D = /* @__PURE__ */ new Set([
   "isthattrue",
   // legacy package name
   "chatluna-fact-check",
@@ -24,7 +24,6 @@ const B = /* @__PURE__ */ new Set([
     title: "DeepSearch",
     sections: [
       { key: "deep-search", title: "迭代搜索" },
-      { key: "deep-llm", title: "搜索源" },
       { key: "deep-chatluna", title: "Chatluna 搜索集成" }
     ]
   },
@@ -39,7 +38,6 @@ const B = /* @__PURE__ */ new Set([
   "factcheck-tool": ["Fact Check 工具", "FactCheck 基础", "Agent 工具配置"],
   "agent-search": ["搜索配置", "搜索源上下文注入", "多源搜索配置", "SearXNG 搜索集成"],
   "deep-search": ["迭代搜索", "DeepSearch 迭代搜索", "DeepSearch 配置", "DeepSearch"],
-  "deep-llm": ["搜索源", "DeepSearch 搜索源", "LLM 搜索源"],
   "deep-chatluna": ["Chatluna 搜索集成"],
   "debug-troubleshooting": ["调试与排障", "调试"]
 }, b = "isthattrue-nav-style";
@@ -217,15 +215,15 @@ function U() {
 const _ = I({
   name: "FactCheckDetailsLoader",
   setup() {
-    const t = A("plugin:name"), e = M(() => {
+    const t = A("plugin:name"), e = P(() => {
       const o = t == null ? void 0 : t.value;
-      return !!o && B.has(o);
+      return !!o && D.has(o);
     });
     let a = null;
     const i = () => {
       a == null || a(), a = null, e.value && (a = U());
     };
-    return P(i), T(e, i), N(() => a == null ? void 0 : a()), () => D("div", { style: { display: "none" } });
+    return T(i), M(e, i), N(() => a == null ? void 0 : a()), () => B("div", { style: { display: "none" } });
   }
 }), R = (t) => {
   t.slot({

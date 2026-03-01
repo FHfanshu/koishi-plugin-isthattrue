@@ -8,6 +8,7 @@ import {
   DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT,
   DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT,
 } from '../utils/prompts'
+import { isOllamaEnabled } from '../utils/apiConfig'
 import { withTimeout } from '../utils/async'
 
 import type {
@@ -24,6 +25,12 @@ import type {
 type Ctx = any
 
 const MAX_PLAN_QUERIES = 4
+const GROK_SUPPLEMENTAL_TIMEOUT_CAP_MS = 18_000
+
+interface GrokSupplementalTracker {
+  focus: string
+  capture: () => PromiseSettledResult<AgentSearchResult> | null
+}
 
 export class DeepSearchController {
   private readonly logger: any
@@ -186,26 +193,140 @@ export class DeepSearchController {
       ? plan.queries
       : [{ query: plan.rationale || '综合核查', focus: '回退默认查询' }]
 
-    const tasks = queries.map((query) => this.searchAgent.search(query))
+    const primaryQueries = queries.map((query) => this.normalizePrimaryQuery(query))
+    const grokSupplementals = primaryQueries
+      .map((query) => this.launchGrokSupplementalQuery(query))
+      .filter((item): item is GrokSupplementalTracker => Boolean(item))
+
+    const tasks = primaryQueries.map((query) => this.searchAgent.search(query))
     const settled = await Promise.allSettled(tasks)
 
-    return settled.map((item, index) => {
+    const results = settled.map((item, index) => {
       if (item.status === 'fulfilled') {
         return item.value
       }
 
-      const fallbackQuery = queries[index]
+      const fallbackQuery = primaryQueries[index]
       const message = (item.reason as any)?.message || String(item.reason)
-      return {
-        agentId: 'deepsearch-execute',
-        perspective: `DeepSearch 执行失败: ${fallbackQuery?.focus || 'unknown'}`,
-        findings: `任务失败: ${message}`,
-        sources: [],
-        confidence: 0,
-        failed: true,
-        error: message,
-      }
+      return this.buildExecutionFailureResult(fallbackQuery, message)
     })
+
+    for (const supplemental of grokSupplementals) {
+      const outcome = supplemental.capture()
+      if (!outcome) {
+        this.logger.debug(`[DeepSearch] Grok 补充未在窗口内完成，已跳过: ${supplemental.focus}`)
+        continue
+      }
+
+      if (outcome.status === 'fulfilled') {
+        if (!outcome.value.failed) {
+          results.push({
+            ...outcome.value,
+            agentId: `${outcome.value.agentId}-grok-supplement`,
+            perspective: `${outcome.value.perspective} (Grok补充)`,
+          })
+        } else {
+          this.logger.debug(`[DeepSearch] Grok 补充失败(${supplemental.focus}): ${outcome.value.error || outcome.value.findings}`)
+        }
+        continue
+      }
+
+      const message = (outcome.reason as any)?.message || String(outcome.reason)
+      this.logger.debug(`[DeepSearch] Grok 补充超时/失败(${supplemental.focus}): ${message}`)
+    }
+
+    return results
+  }
+
+  private buildExecutionFailureResult(query: DeepSearchQuery | undefined, message: string): AgentSearchResult {
+    return {
+      agentId: 'deepsearch-execute',
+      perspective: `DeepSearch 执行失败: ${query?.focus || 'unknown'}`,
+      findings: `任务失败: ${message}`,
+      sources: [],
+      confidence: 0,
+      failed: true,
+      error: message,
+    }
+  }
+
+  private normalizePrimaryQuery(query: DeepSearchQuery): DeepSearchQuery {
+    const providers = this.getProviderPriorityOrder()
+    if (providers.length === 0) {
+      return query
+    }
+
+    if (query.provider && query.provider !== 'grok') {
+      return query
+    }
+
+    const preferredProvider = providers[0]
+    if (query.provider === preferredProvider) {
+      return query
+    }
+
+    if (query.provider === 'grok') {
+      this.logger.debug(`[DeepSearch] provider=grok 已降级为快速优先 ${preferredProvider}`)
+    }
+
+    return {
+      ...query,
+      provider: preferredProvider,
+    }
+  }
+
+  private getProviderPriorityOrder(): ProviderKey[] {
+    const providers: ProviderKey[] = []
+    if (this.config.factCheck.geminiModel?.trim()) providers.push('gemini')
+    if (isOllamaEnabled(this.config)) providers.push('ollama')
+    if (this.config.factCheck.chatgptModel?.trim()) providers.push('chatgpt')
+    if (this.config.factCheck.grokModel?.trim()) providers.push('grok')
+    return providers
+  }
+
+  private launchGrokSupplementalQuery(query: DeepSearchQuery): GrokSupplementalTracker | null {
+    const grokModel = this.config.factCheck.grokModel?.trim()
+    if (!grokModel || query.provider === 'grok') {
+      return null
+    }
+
+    const focus = query.focus || query.query || 'unknown'
+    const timeoutMs = this.getGrokSupplementalTimeoutMs()
+    const task = withTimeout(
+      this.searchAgent.search({
+        query: query.query,
+        focus,
+        provider: 'grok',
+      }),
+      timeoutMs,
+      `DeepSearch Grok补充: ${focus}`
+    )
+
+    return {
+      focus,
+      capture: this.observePromise(task),
+    }
+  }
+
+  private getGrokSupplementalTimeoutMs(): number {
+    const perIterationTimeout = this.config.deepSearch.perIterationTimeout || 30_000
+    const calculated = Math.floor(perIterationTimeout * 0.4)
+    return Math.max(5_000, Math.min(GROK_SUPPLEMENTAL_TIMEOUT_CAP_MS, calculated))
+  }
+
+  private observePromise<T>(promise: Promise<T>): () => PromiseSettledResult<T> | null {
+    let settled: PromiseSettledResult<T> | null = null
+
+    void promise.then(
+      (value) => {
+        settled = { status: 'fulfilled', value }
+      },
+      (reason) => {
+        settled = { status: 'rejected', reason }
+      }
+    )
+
+    return () => settled
   }
 
   private shouldStop(evaluation: DeepSearchEvaluation, history: DeepSearchHistory): boolean {

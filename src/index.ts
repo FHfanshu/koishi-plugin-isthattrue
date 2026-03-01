@@ -42,11 +42,10 @@ export const usage = `
 |---|---|
 | **Ollama 配置** | API Key、Base URL、启用开关 |
 | **FactCheck 基础 → Fact Check 工具** | 工具注册、快速搜索模型、输入上限 |
-| **FactCheck 基础 → 搜索配置** | 多源并行搜索模型与参数、搜索源上下文注入 |
+| **FactCheck 基础 → 搜索配置** | 多源并行搜索模型与参数（FactCheck/DeepSearch 共用）、搜索源上下文注入 |
 | **DeepSearch → 迭代搜索** | 异步任务、主控模型、迭代轮数、置信度阈值 |
-| **DeepSearch → 搜索源** | DeepSearch 专用的 LLM 搜索源模型 |
 | **DeepSearch → Chatluna 搜索集成** | web_search / browser 工具集成开关 |
-| **调试与排障** | 超时、重试、代理模式、调试日志 |
+| **调试与排障** | 重试、代理模式、调试日志 |
 
 ### 关键配置
 
@@ -60,7 +59,7 @@ export const usage = `
 
 ### Gemini 搜索模型要求
 
-\`factCheck.geminiModel\`（或 \`factCheck.quickToolModel\`）填写 Gemini 模型时，**必须同时满足以下两个条件**，否则调用时会报错：
+\`factCheck.geminiModel\` 填写 Gemini 模型时，**必须同时满足以下两个条件**，否则调用时会报错：
 
 1. **使用 Gemini 原生适配器**（\`koishi-plugin-chatluna-gemini-adapter\`）——不可使用 OpenAI 兼容中转。
 2. **该 Gemini 适配器内仅开启两项联网工具**，其余全部关闭：

@@ -2,7 +2,7 @@ import { Context } from '@koishijs/client'
 import { computed, defineComponent, inject, onBeforeUnmount, onMounted, type ComputedRef, watch, h } from 'vue'
 
 type NavSection = {
-  key: 'api-key-table' | 'factcheck-tool' | 'agent-search' | 'deep-search' | 'deep-llm' | 'deep-chatluna' | 'debug-troubleshooting'
+  key: 'api-key-table' | 'factcheck-tool' | 'agent-search' | 'deep-search' | 'deep-chatluna' | 'debug-troubleshooting'
   title: string
 }
 
@@ -36,7 +36,6 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'DeepSearch',
     sections: [
       { key: 'deep-search', title: '迭代搜索' },
-      { key: 'deep-llm', title: '搜索源' },
       { key: 'deep-chatluna', title: 'Chatluna 搜索集成' },
     ],
   },
@@ -54,7 +53,6 @@ const SECTION_TITLE_ALIASES: Record<NavSection['key'], string[]> = {
   'factcheck-tool': ['Fact Check 工具', 'FactCheck 基础', 'Agent 工具配置'],
   'agent-search': ['搜索配置', '搜索源上下文注入', '多源搜索配置', 'SearXNG 搜索集成'],
   'deep-search': ['迭代搜索', 'DeepSearch 迭代搜索', 'DeepSearch 配置', 'DeepSearch'],
-  'deep-llm': ['搜索源', 'DeepSearch 搜索源', 'LLM 搜索源'],
   'deep-chatluna': ['Chatluna 搜索集成'],
   'debug-troubleshooting': ['调试与排障', '调试'],
 }
