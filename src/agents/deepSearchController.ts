@@ -198,7 +198,12 @@ export class DeepSearchController {
       .map((query) => this.launchGrokSupplementalQuery(query))
       .filter((item): item is GrokSupplementalTracker => Boolean(item))
 
-    const tasks = primaryQueries.map((query) => this.searchAgent.search(query))
+    const perQueryTimeoutMs = this.getPerQueryTimeoutMs()
+    const tasks = primaryQueries.map((query, index) => withTimeout(
+      this.searchAgent.search(query),
+      perQueryTimeoutMs,
+      `DeepSearch查询${index + 1}:${query.focus || query.query}`
+    ))
     const settled = await Promise.allSettled(tasks)
 
     const results = settled.map((item, index) => {
@@ -312,6 +317,13 @@ export class DeepSearchController {
     const perIterationTimeout = this.config.deepSearch.perIterationTimeout || 30_000
     const calculated = Math.floor(perIterationTimeout * 0.4)
     return Math.max(5_000, Math.min(GROK_SUPPLEMENTAL_TIMEOUT_CAP_MS, calculated))
+  }
+
+  private getPerQueryTimeoutMs(): number {
+    const perIterationTimeout = this.config.deepSearch.perIterationTimeout || 30_000
+    const configuredPerSource = this.config.factCheck.perSourceTimeout || 45_000
+    const budget = Math.max(5_000, perIterationTimeout - 3_000)
+    return Math.max(5_000, Math.min(configuredPerSource, budget))
   }
 
   private observePromise<T>(promise: Promise<T>): () => PromiseSettledResult<T> | null {

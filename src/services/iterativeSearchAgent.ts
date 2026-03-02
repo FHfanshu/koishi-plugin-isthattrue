@@ -3,7 +3,7 @@ import { OllamaSearchService } from './ollamaSearch'
 import { isOllamaEnabled } from '../utils/apiConfig'
 import { DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
 import { truncate } from '../utils/text'
-import { extractUrls, normalizeUrl } from '../utils/url'
+import { extractUrls, isSafePublicHttpUrl, normalizeUrl } from '../utils/url'
 import { normalizeResultItems } from '../utils/search'
 
 import type { AgentSearchResult, DeepSearchQuery, PluginConfig, ProviderKey } from '../types'
@@ -108,6 +108,7 @@ export class IterativeSearchAgent {
           this.config.deepSearch.controllerModel?.trim()
           || this.config.factCheck.geminiModel?.trim()
           || this.config.factCheck.grokModel?.trim()
+          || this.config.factCheck.chatgptModel?.trim()
           || this.config.factCheck.grokModel,
       },
     }
@@ -243,16 +244,21 @@ ${focus}
       throw new Error('browser 工具缺少 url 参数')
     }
 
+    const normalizedUrl = normalizeUrl(targetUrl)
+    if (!isSafePublicHttpUrl(normalizedUrl)) {
+      throw new Error(`browser 工具 URL 非法或不安全: ${targetUrl}`)
+    }
+
     const action = query.toolArgs?.action?.trim() || 'summarize'
     const params = query.toolArgs?.params?.trim() || ''
     const tool = this.createTool('browser')
     const rawResult = await this.invokeTool(tool, {
-      url: targetUrl,
+      url: normalizedUrl,
       action,
       params,
     })
 
-    return this.parseBrowserResult(rawResult, query, targetUrl)
+    return this.parseBrowserResult(rawResult, query, normalizedUrl)
   }
 
   private async searchWithOllama(query: DeepSearchQuery): Promise<AgentSearchResult> {
@@ -265,7 +271,7 @@ ${focus}
       return {
         agentId: 'deepsearch-model',
         perspective: `DeepSearch 模型搜索: ${query.focus}`,
-        findings: 'DeepSearch 未配置可用搜索来源。请配置 deepSearch.grokModel / geminiModel / chatgptModel，或在 api.ollamaEnabled 启用 ollama。',
+        findings: 'DeepSearch 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel / factCheck.chatgptModel，或在 api.ollamaEnabled 启用 ollama。',
         sources: [],
         confidence: 0,
         failed: true,

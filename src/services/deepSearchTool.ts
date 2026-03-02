@@ -135,9 +135,9 @@ class DeepSearchTool extends Tool {
         return '[DeepSearch]\nstatus 模式缺少 taskId 字段'
       }
 
-      const task = this.taskService.getStatus(taskId)
+      const task = this.taskService.getStatus(taskId, session)
       if (!task) {
-        return `[DeepSearch]\n任务不存在: ${taskId}`
+        return `[DeepSearch]\n任务不存在或无权限: ${taskId}`
       }
 
       const elapsed = this.formatElapsed(task.startedAt || task.createdAt)
@@ -149,9 +149,9 @@ class DeepSearchTool extends Tool {
       return '[DeepSearch]\nresult 模式缺少 taskId 字段'
     }
 
-    const task = this.taskService.getResult(taskId)
+    const task = this.taskService.getResult(taskId, session)
     if (!task) {
-      return `[DeepSearch]\n任务不存在: ${taskId}`
+      return `[DeepSearch]\n任务不存在或无权限: ${taskId}`
     }
 
     if (task.status === 'succeeded' && task.report) {

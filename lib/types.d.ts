@@ -130,6 +130,7 @@ export interface DeepSearchTask {
     status: DeepSearchTaskStatus;
     createdAt: number;
     updatedAt: number;
+    ownerId?: string;
     startedAt?: number;
     finishedAt?: number;
     report?: DeepSearchReport;

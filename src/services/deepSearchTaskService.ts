@@ -20,6 +20,7 @@ export class DeepSearchTaskService {
   private runningCount = 0
   private sequence = 0
   private readonly cleanupTimer: NodeJS.Timeout
+  private disposed = false
 
   constructor(private readonly ctx: Ctx, private readonly config: PluginConfig) {
     this.logger = ctx.logger('chatluna-fact-check')
@@ -27,10 +28,17 @@ export class DeepSearchTaskService {
   }
 
   dispose(): void {
+    this.disposed = true
     clearInterval(this.cleanupTimer)
+    this.queue = []
+    this.tasks.clear()
   }
 
   submit(claim: string, session?: any): DeepSearchTask {
+    if (this.disposed) {
+      throw new Error('DeepSearchTaskService 已释放，无法提交任务')
+    }
+
     this.cleanupExpiredTasks()
 
     const activeTaskCount = this.queue.length + this.runningCount
@@ -48,6 +56,7 @@ export class DeepSearchTaskService {
       status: 'queued',
       createdAt: now,
       updatedAt: now,
+      ownerId: this.resolveTaskOwner(session) || undefined,
       session,
     }
 
@@ -57,17 +66,39 @@ export class DeepSearchTaskService {
     return task
   }
 
-  getStatus(taskId: string): DeepSearchTask | null {
+  getStatus(taskId: string, session?: any): DeepSearchTask | null {
     this.cleanupExpiredTasks()
-    return this.tasks.get(taskId) || null
+    const task = this.tasks.get(taskId)
+    if (!task) {
+      return null
+    }
+
+    if (!this.canAccessTask(task, session)) {
+      return null
+    }
+
+    return task
   }
 
-  getResult(taskId: string): DeepSearchTask | null {
+  getResult(taskId: string, session?: any): DeepSearchTask | null {
     this.cleanupExpiredTasks()
-    return this.tasks.get(taskId) || null
+    const task = this.tasks.get(taskId)
+    if (!task) {
+      return null
+    }
+
+    if (!this.canAccessTask(task, session)) {
+      return null
+    }
+
+    return task
   }
 
   private processQueue(): void {
+    if (this.disposed) {
+      return
+    }
+
     const maxWorkers = Math.max(1, Math.min(this.config.deepSearch.asyncMaxWorkers || 2, 8))
 
     while (this.runningCount < maxWorkers && this.queue.length > 0) {
@@ -116,6 +147,10 @@ export class DeepSearchTaskService {
   }
 
   private async notifyCharacterTaskCompletion(task: DeepSearchTask): Promise<void> {
+    if (this.disposed) {
+      return
+    }
+
     const session = task.session
     if (!session) {
       return
@@ -215,5 +250,27 @@ export class DeepSearchTaskService {
     const computed = iterationCount * perIterationTimeout + 10_000
     const ttl = Math.max(60_000, this.config.deepSearch.asyncTaskTtlMs || 600_000)
     return Math.max(15_000, Math.min(computed, ttl))
+  }
+
+  private canAccessTask(task: DeepSearchTask, session?: any): boolean {
+    if (!task.ownerId) {
+      return true
+    }
+
+    const requester = this.resolveTaskOwner(session)
+    return Boolean(requester && requester === task.ownerId)
+  }
+
+  private resolveTaskOwner(session?: any): string {
+    const platform = typeof session?.platform === 'string' ? session.platform : 'unknown'
+    const userId = typeof session?.userId === 'string' ? session.userId : ''
+    const channelId = typeof session?.channelId === 'string' ? session.channelId : ''
+    const guildId = typeof session?.guildId === 'string' ? session.guildId : ''
+
+    if (!userId) {
+      return ''
+    }
+
+    return `${platform}:${userId}:${channelId || guildId || 'dm'}`
   }
 }

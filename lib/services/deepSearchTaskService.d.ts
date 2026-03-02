@@ -10,11 +10,12 @@ export declare class DeepSearchTaskService {
     private runningCount;
     private sequence;
     private readonly cleanupTimer;
+    private disposed;
     constructor(ctx: Ctx, config: PluginConfig);
     dispose(): void;
     submit(claim: string, session?: any): DeepSearchTask;
-    getStatus(taskId: string): DeepSearchTask | null;
-    getResult(taskId: string): DeepSearchTask | null;
+    getStatus(taskId: string, session?: any): DeepSearchTask | null;
+    getResult(taskId: string, session?: any): DeepSearchTask | null;
     private processQueue;
     private executeTask;
     private notifyCharacterTaskCompletion;
@@ -22,5 +23,7 @@ export declare class DeepSearchTaskService {
     private cleanupExpiredTasks;
     private generateTaskId;
     private getTaskTimeoutMs;
+    private canAccessTask;
+    private resolveTaskOwner;
 }
 export {};

@@ -243,7 +243,7 @@ ${sourceText}`
 
   private async buildChatlunaSearchContext(claim: string): Promise<string | null> {
     if (!this.config.factCheck.appendChatlunaSearchContext) {
-      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (agent.appendChatlunaSearchContext=false)')
+      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (factCheck.appendChatlunaSearchContext=false)')
       return null
     }
 
@@ -364,12 +364,14 @@ ${sourceText}`
       this.logger.info(`[ChatlunaTool] providers=${providers.map((p) => `${p.key}:${p.model}`).join(', ') || 'none'}`)
 
       if (providers.length === 0) {
-        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 agent.grokModel / agent.geminiModel / agent.chatgptModel，或在 api.ollamaEnabled 启用 ollama。'
+        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel / factCheck.chatgptModel，或在 api.ollamaEnabled 启用 ollama。'
       }
 
       if (!this.config.factCheck.enableMultiSourceSearch || providers.length === 1) {
         const provider = providers[0]
-        const timeout = this.config.factCheck.perSourceTimeout
+        const timeout = provider.key === 'ollama'
+          ? this.config.factCheck.ollamaSearchTimeout
+          : this.config.factCheck.perSourceTimeout
 
         const result = await withTimeout(
           provider.key === 'ollama'
@@ -550,7 +552,7 @@ export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
         disposables.push(disposeQuick)
       }
     } else {
-      logger.warn('[ChatlunaTool] agent.enableQuickTool=false，未注册 fact_check 工具')
+      logger.warn('[ChatlunaTool] factCheck.enableQuickTool=false，未注册 fact_check 工具')
     }
 
     return () => {

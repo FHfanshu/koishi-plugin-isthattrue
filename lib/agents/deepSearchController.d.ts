@@ -19,6 +19,7 @@ export declare class DeepSearchController {
     private getProviderPriorityOrder;
     private launchGrokSupplementalQuery;
     private getGrokSupplementalTimeoutMs;
+    private getPerQueryTimeoutMs;
     private observePromise;
     private shouldStop;
     private parseSearchPlan;
