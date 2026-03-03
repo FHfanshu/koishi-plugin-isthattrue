@@ -13,10 +13,6 @@ const OUTPUT = {
     /** 参考来源显示最大数量 */
     MAX_SOURCES_DISPLAY: 5,
 };
-/** Agent ID 常量 */
-const AGENT = {
-    CHATLUNA_SEARCH: 'chatluna-search',
-};
 /** 判决结果到 Emoji 的映射 */
 export const VERDICT_EMOJI = {
     true: '✅ 真实',
@@ -90,16 +86,15 @@ export const DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT = `你是 DeepSearch 主控模
 \`\`\`json
 {
   "queries": [
-    {"query":"搜索词","provider":"gemini","focus":"新闻与官方通报","useTool":"web_search"},
-    {"query":"搜索词","provider":"ollama","focus":"Ollama Search 聚合","useTool":"ollama_search"},
-    {"query":"搜索词","provider":"grok","focus":"X/Twitter 讨论（慢速补充）"}
+    {"query":"搜索词","provider":"gemini","focus":"网页搜索与权威来源","useTool":"jina_reader"},
+    {"query":"搜索词","provider":"grok","focus":"X/Twitter 实时讨论","useTool":"grok_web_search"}
   ],
   "rationale":"本轮计划理由"
 }
 \`\`\`
 
-可选 provider: grok | gemini | chatgpt | ollama
-可选 useTool: web_search | browser | ollama_search`;
+可选 provider: grok | gemini
+可选 useTool: grok_web_search | jina_reader`;
 /**
  * DeepSearch 评估系统提示词
  */
@@ -260,10 +255,9 @@ ${summarizeHistory(history)}
 1. 查询词可直接执行，不要过长
 2. 每条任务必须有 focus
 3. 避免与历史完全重复
-4. 优先使用 useTool=web_search 或 useTool=browser 获取一手网页证据
-5. provider 优先 gemini 或 ollama；grok 仅在需要补充社交媒体证据时使用
-6. 需要 Ollama 搜索时可使用 provider=ollama 或 useTool=ollama_search
-7. 仅输出 JSON`;
+4. 优先使用 useTool=jina_reader（网页精读）或 useTool=grok_web_search（实时搜索）获取一手证据
+5. provider 优先 gemini；grok 仅在需要补充 X/Twitter 实时讨论时使用
+6. 仅输出 JSON`;
 }
 /**
  * 构建 DeepSearch 评估 Prompt
@@ -407,14 +401,6 @@ export function formatForwardMessages(content, searchResults, verdict, reasoning
     // 2. 各 Agent 搜索结果（截断每个）
     for (const r of searchResults) {
         let cleanFindings = r.findings;
-        // 移除 Chatluna Search 中可能导致超长的详情部分
-        if (r.agentId === AGENT.CHATLUNA_SEARCH) {
-            const summaryEndIndex = r.findings.indexOf('================================');
-            if (summaryEndIndex !== -1) {
-                cleanFindings = r.findings.substring(0, summaryEndIndex + 32) +
-                    '\n\n(搜索详情已在合并消息中省略，请查看判决依据)';
-            }
-        }
         const truncatedFindings = cleanFindings.length > maxSegmentLength
             ? cleanFindings.substring(0, maxSegmentLength) + '...'
             : cleanFindings;

@@ -4,13 +4,8 @@ export declare enum Verdict {
     UNCERTAIN = "uncertain",
     PARTIALLY_TRUE = "partially_true"
 }
-export type ProviderKey = 'grok' | 'gemini' | 'chatgpt' | 'ollama';
+export type ProviderKey = 'grok' | 'gemini';
 export type SearchScope = 'agent' | 'deepsearch';
-export interface ApiConfig {
-    ollamaApiKey: string;
-    ollamaBaseUrl: string;
-    ollamaEnabled: boolean;
-}
 export interface AgentConfig {
     enable: boolean;
     enableQuickTool: boolean;
@@ -18,19 +13,12 @@ export interface AgentConfig {
     quickToolDescription: string;
     maxInputChars: number;
     maxSources: number;
-    appendChatlunaSearchContext: boolean;
-    appendOllamaSearchContext: boolean;
-    searchContextTimeout: number;
-    searchContextMaxChars: number;
-    searchContextMaxSources: number;
     enableMultiSourceSearch: boolean;
     grokModel: string;
     geminiModel: string;
-    chatgptModel: string;
-    ollamaSearchMaxResults: number;
-    ollamaSearchTimeout: number;
     perSourceTimeout: number;
     fastReturnMinSuccess: number;
+    fastReturnPreferredProvider: ProviderKey | '';
     fastReturnMaxWaitMs: number;
     maxFindingsChars: number;
     enableSummary: boolean;
@@ -49,8 +37,6 @@ export interface DeepSearchConfig {
     perIterationTimeout: number;
     minConfidenceThreshold: number | null;
     minSourcesThreshold: number | null;
-    useChatlunaSearchTool: boolean;
-    usePuppeteerBrowser: boolean;
 }
 export type ProxyMode = 'follow-global' | 'direct' | 'custom';
 export interface FactCheckConfig {
@@ -59,8 +45,17 @@ export interface FactCheckConfig {
     proxyAddress: string;
     logLLMDetails: boolean;
 }
+export interface GrokWebSearchConfig {
+    apiBaseUrl: string;
+    timeout: number;
+}
+export interface JinaReaderConfig {
+    apiKey: string;
+    timeout: number;
+}
 export interface PluginConfig {
-    api: ApiConfig;
+    grokWebSearch: GrokWebSearchConfig;
+    jina: JinaReaderConfig;
     factCheck: AgentConfig;
     deepSearch: DeepSearchConfig;
     debug: FactCheckConfig;
@@ -88,7 +83,7 @@ export interface DeepSearchQuery {
     query: string;
     focus: string;
     provider?: ProviderKey;
-    useTool?: 'web_search' | 'browser' | 'ollama_search';
+    useTool?: 'grok_web_search' | 'jina_reader';
     toolArgs?: {
         url?: string;
         action?: string;

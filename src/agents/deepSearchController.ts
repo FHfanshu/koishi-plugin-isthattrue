@@ -8,7 +8,6 @@ import {
   DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT,
   DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT,
 } from '../utils/prompts'
-import { isOllamaEnabled } from '../utils/apiConfig'
 import { withTimeout } from '../utils/async'
 
 import type {
@@ -261,30 +260,19 @@ export class DeepSearchController {
       return query
     }
 
-    if (query.provider && query.provider !== 'grok') {
+    if (query.provider && providers.includes(query.provider)) {
       return query
-    }
-
-    const preferredProvider = providers[0]
-    if (query.provider === preferredProvider) {
-      return query
-    }
-
-    if (query.provider === 'grok') {
-      this.logger.debug(`[DeepSearch] provider=grok 已降级为快速优先 ${preferredProvider}`)
     }
 
     return {
       ...query,
-      provider: preferredProvider,
+      provider: providers[0],
     }
   }
 
   private getProviderPriorityOrder(): ProviderKey[] {
     const providers: ProviderKey[] = []
     if (this.config.factCheck.geminiModel?.trim()) providers.push('gemini')
-    if (isOllamaEnabled(this.config)) providers.push('ollama')
-    if (this.config.factCheck.chatgptModel?.trim()) providers.push('chatgpt')
     if (this.config.factCheck.grokModel?.trim()) providers.push('grok')
     return providers
   }
@@ -528,14 +516,14 @@ export class DeepSearchController {
   }
 
   private parseProvider(value: unknown): ProviderKey | undefined {
-    if (value === 'grok' || value === 'gemini' || value === 'chatgpt' || value === 'ollama') {
+    if (value === 'grok' || value === 'gemini') {
       return value
     }
     return undefined
   }
 
   private parseUseTool(value: unknown): DeepSearchQuery['useTool'] {
-    if (value === 'web_search' || value === 'browser' || value === 'ollama_search') {
+    if (value === 'grok_web_search' || value === 'jina_reader') {
       return value
     }
     return undefined

@@ -2,12 +2,9 @@ import { Tool } from '@langchain/core/tools'
 
 import { SubSearchAgent } from '../agents/subSearchAgent'
 import { withTimeout } from '../utils/async'
-import { isOllamaEnabled } from '../utils/apiConfig'
 import { buildFactCheckToolSearchPrompt, FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT } from '../utils/prompts'
 import { maybeSummarize } from '../utils/summary'
 import { truncate } from '../utils/text'
-import { ChatlunaSearchAgent } from './chatlunaSearch'
-import { OllamaSearchService } from './ollamaSearch'
 
 import type { AgentSearchResult, PluginConfig, ProviderKey } from '../types'
 
@@ -32,7 +29,6 @@ class FactCheckTool extends Tool {
 
   private readonly logger: any
   private readonly subSearchAgent: SubSearchAgent
-  private readonly ollamaSearchService: OllamaSearchService
   private readonly backgroundTasks = new Set<Promise<ProviderTaskOutcome>>()
 
   constructor(
@@ -43,10 +39,9 @@ class FactCheckTool extends Tool {
   ) {
     super()
     this.name = sanitizeToolName(toolName, 'fact_check')
-    this.description = sanitizeToolDescription(toolDescription, '用于网络搜索与事实核查。输入待核查文本，返回来源与摘要。')
+    this.description = sanitizeToolDescription(toolDescription, '用于网络搜索与事实核查。输入待核查文本,返回来源与摘要。')
     this.logger = ctx.logger('chatluna-fact-check')
     this.subSearchAgent = new SubSearchAgent(ctx, config)
-    this.ollamaSearchService = new OllamaSearchService(ctx, config)
   }
 
   private getQuickProvider(): ToolProvider | null {
@@ -63,6 +58,11 @@ class FactCheckTool extends Tool {
   private normalizeFastReturnMinSuccess(providerCount: number): number {
     const configured = this.config.factCheck.fastReturnMinSuccess ?? 2
     return Math.max(1, Math.min(configured, providerCount))
+  }
+
+  private getFastReturnPreferredProvider(): ProviderKey | null {
+    const configured = this.config.factCheck.fastReturnPreferredProvider
+    return configured === 'grok' || configured === 'gemini' ? configured : null
   }
 
   private buildInternalContextPreamble(): string {
@@ -86,16 +86,6 @@ class FactCheckTool extends Tool {
   }
 
   private createProviderTask(claim: string, provider: ToolProvider, index: number): Promise<ProviderTaskOutcome> {
-    if (provider.key === 'ollama') {
-      return withTimeout(
-        this.ollamaSearchService.search(claim, 'OllamaSearch', 'agent'),
-        this.config.factCheck.ollamaSearchTimeout,
-        provider.label
-      )
-        .then((value) => ({ index, provider, status: 'fulfilled' as const, value }))
-        .catch((reason) => ({ index, provider, status: 'rejected', reason }))
-    }
-
     return withTimeout(
       this.subSearchAgent.deepSearchWithModel(
         claim,
@@ -148,13 +138,6 @@ class FactCheckTool extends Tool {
     const geminiModel = this.config.factCheck.geminiModel?.trim()
     if (geminiModel) providers.push({ key: 'gemini', label: 'GeminiSearch', model: geminiModel })
 
-    const chatgptModel = this.config.factCheck.chatgptModel?.trim()
-    if (chatgptModel) providers.push({ key: 'chatgpt', label: 'ChatGPTSearch', model: chatgptModel })
-
-    if (isOllamaEnabled(this.config)) {
-      providers.push({ key: 'ollama', label: 'OllamaSearch', model: 'ollama-search-api' })
-    }
-
     return providers
   }
 
@@ -200,135 +183,6 @@ ${sourceText}`
     return parts.join('\n')
   }
 
-  private formatChatlunaSearchContext(result: AgentSearchResult): string {
-    const findings = truncate(
-      result.findings,
-      Math.min(this.config.factCheck.searchContextMaxChars, 500),
-      '无可用搜索结果'
-    )
-
-    const totalSourceCount = result.sources.length
-    const sources = result.sources.slice(0, this.config.factCheck.searchContextMaxSources)
-    const domains = this.extractSourceDomains(result.sources)
-    const domainPreview = domains.length > 0 ? domains.slice(0, 10).join(', ') : '无'
-    const sourceText = sources.length > 0 ? sources.map((s) => `- ${s}`).join('\n') : '- 无'
-
-    return `[ChatlunaSearchContextInternal]
-${findings}
-
-[ChatlunaSearchMeta]
-搜索源总数: ${totalSourceCount}
-搜索源域名: ${domainPreview}
-
-[ChatlunaSearchSources]
-${sourceText}`
-  }
-
-  private extractSourceDomains(sources: string[]): string[] {
-    const domains = new Set<string>()
-
-    for (const source of sources || []) {
-      if (!source) continue
-
-      try {
-        domains.add(new URL(source).hostname)
-      } catch {
-        const simplified = source.trim().replace(/^https?:\/\//, '').split('/')[0]
-        if (simplified) domains.add(simplified)
-      }
-    }
-
-    return [...domains]
-  }
-
-  private async buildChatlunaSearchContext(claim: string): Promise<string | null> {
-    if (!this.config.factCheck.appendChatlunaSearchContext) {
-      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (factCheck.appendChatlunaSearchContext=false)')
-      return null
-    }
-
-    const chatlunaSearchAgent = new ChatlunaSearchAgent(this.ctx, this.config)
-    if (!chatlunaSearchAgent.isAvailable()) {
-      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: skipped (chatluna-search-service unavailable)')
-      return null
-    }
-
-    try {
-      this.logger.info('[ChatlunaTool] ChatlunaSearchContext: invoking chatluna-search-service')
-      const searchResult = await withTimeout(
-        chatlunaSearchAgent.search(claim),
-        this.config.factCheck.searchContextTimeout,
-        'ChatlunaSearchContext'
-      )
-
-      if (!searchResult || searchResult.failed) {
-        this.logger.info('[ChatlunaTool] ChatlunaSearchContext: completed but no usable result')
-        return null
-      }
-
-      const domains = this.extractSourceDomains(searchResult.sources)
-      this.logger.info(`[ChatlunaTool] ChatlunaSearchContext: appended (sources=${searchResult.sources.length}, domains=${domains.join(', ') || 'none'})`)
-      return this.formatChatlunaSearchContext(searchResult)
-    } catch (error: any) {
-      this.logger.warn(`[ChatlunaTool] 追加 Chatluna Search 上下文失败: ${error?.message || error}`)
-      return null
-    }
-  }
-
-  private appendContext(baseOutput: string, context: string | null): string {
-    if (!context) return baseOutput
-    return `${baseOutput}\n\n${context}`
-  }
-
-  private formatOllamaSearchContext(result: AgentSearchResult): string {
-    const findings = truncate(
-      result.findings,
-      Math.min(this.config.factCheck.searchContextMaxChars, 500),
-      '无可用搜索结果'
-    )
-
-    const totalSourceCount = result.sources.length
-    const sources = result.sources.slice(0, this.config.factCheck.searchContextMaxSources)
-    const domains = this.extractSourceDomains(result.sources)
-    const domainPreview = domains.length > 0 ? domains.slice(0, 10).join(', ') : '无'
-    const sourceText = sources.length > 0 ? sources.map((s) => `- ${s}`).join('\n') : '- 无'
-
-    return `[OllamaSearchContextInternal]
-${findings}
-
-[OllamaSearchMeta]
-搜索源总数: ${totalSourceCount}
-搜索源域名: ${domainPreview}
-
-[OllamaSearchSources]
-${sourceText}`
-  }
-
-  private async buildOllamaSearchContext(claim: string): Promise<string | null> {
-    if (!this.config.factCheck.appendOllamaSearchContext) {
-      return null
-    }
-
-    try {
-      const searchResult = await withTimeout(
-        this.ollamaSearchService.search(claim, 'Ollama Search 上下文', 'agent'),
-        this.config.factCheck.searchContextTimeout,
-        'OllamaSearchContext'
-      )
-
-      if (!searchResult || searchResult.failed) {
-        return null
-      }
-
-      const domains = this.extractSourceDomains(searchResult.sources)
-      this.logger.info(`[ChatlunaTool] OllamaSearchContext: appended (sources=${searchResult.sources.length}, domains=${domains.join(', ') || 'none'})`)
-      return this.formatOllamaSearchContext(searchResult)
-    } catch (error: any) {
-      this.logger.warn(`[ChatlunaTool] 追加 Ollama Search 上下文失败: ${error?.message || error}`)
-      return null
-    }
-  }
-
   async _call(input: string): Promise<string> {
     const rawClaim = (input || '').trim()
     if (!rawClaim) {
@@ -364,27 +218,22 @@ ${sourceText}`
       this.logger.info(`[ChatlunaTool] providers=${providers.map((p) => `${p.key}:${p.model}`).join(', ') || 'none'}`)
 
       if (providers.length === 0) {
-        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel / factCheck.chatgptModel，或在 api.ollamaEnabled 启用 ollama。'
+        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel。'
       }
 
       if (!this.config.factCheck.enableMultiSourceSearch || providers.length === 1) {
         const provider = providers[0]
-        const timeout = provider.key === 'ollama'
-          ? this.config.factCheck.ollamaSearchTimeout
-          : this.config.factCheck.perSourceTimeout
 
         const result = await withTimeout(
-          provider.key === 'ollama'
-            ? this.ollamaSearchService.search(claim, provider.label, 'agent')
-            : this.subSearchAgent.deepSearchWithModel(
-                claim,
-                provider.model,
-                `tool-${provider.key}`,
-                provider.label,
-                buildFactCheckToolSearchPrompt(claim),
-                FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
-              ),
-          timeout,
+          this.subSearchAgent.deepSearchWithModel(
+            claim,
+            provider.model,
+            `tool-${provider.key}`,
+            provider.label,
+            buildFactCheckToolSearchPrompt(claim),
+            FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
+          ),
+          this.config.factCheck.perSourceTimeout,
           provider.label
         )
 
@@ -392,13 +241,7 @@ ${sourceText}`
           return `[${provider.label}]\n搜索失败: ${result.error || result.findings}`
         }
 
-        const output = this.formatSingleResult(result)
-        const chatlunaContext = await this.buildChatlunaSearchContext(claim)
-        const ollamaContext = await this.buildOllamaSearchContext(claim)
-
-        this.logger.info(`[ChatlunaTool] Context append result: chatluna=${Boolean(chatlunaContext)}, ollama=${Boolean(ollamaContext)}`)
-        const combined = this.appendContext(this.appendContext(output, chatlunaContext), ollamaContext)
-        return this.summarizeOutput(combined, 'fact_check(single)')
+        return this.summarizeOutput(this.formatSingleResult(result), 'fact_check(single)')
       }
 
       const successResults: AgentSearchResult[] = []
@@ -406,6 +249,9 @@ ${sourceText}`
       const start = Date.now()
 
       const minSuccess = this.normalizeFastReturnMinSuccess(providers.length)
+      const preferredProvider = this.getFastReturnPreferredProvider()
+      const shouldWaitPreferred = !!preferredProvider && providers.some((p) => p.key === preferredProvider)
+      let preferredProviderSucceeded = false
       const maxWaitMs = Math.max(
         1000,
         Math.min(this.config.factCheck.fastReturnMaxWaitMs ?? 12_000, this.config.factCheck.perSourceTimeout)
@@ -446,6 +292,11 @@ ${sourceText}`
             this.logger.warn(`[ChatlunaTool] ${outcome.provider.label} 失败: ${outcome.value.error || outcome.value.findings}`)
           } else if (outcome.value) {
             successResults.push(outcome.value)
+            if (shouldWaitPreferred && outcome.provider.key === preferredProvider) {
+              preferredProviderSucceeded = true
+              this.logger.info(`[ChatlunaTool] 优先来源 ${outcome.provider.label} 已成功，提前返回`)
+              break
+            }
           }
         } else {
           failedLabels.push(outcome.provider.label)
@@ -454,8 +305,14 @@ ${sourceText}`
 
         const elapsed = Date.now() - start
         if (successResults.length >= minSuccess) {
+          if (shouldWaitPreferred && !preferredProviderSucceeded) {
+            this.logger.info(
+              `[ChatlunaTool] 已获得 ${successResults.length} 个成功来源，但仍等待优先来源 ${preferredProvider}`
+            )
+          } else {
           this.logger.info(`[ChatlunaTool] 已获得 ${successResults.length} 个成功来源，提前返回`)
           break
+          }
         }
 
         if (elapsed < maxWaitMs) {
@@ -477,16 +334,11 @@ ${sourceText}`
       }
 
       const output = this.formatMultiResults(successResults)
-      const chatlunaContext = await this.buildChatlunaSearchContext(claim)
-      const ollamaContext = await this.buildOllamaSearchContext(claim)
-      this.logger.info(`[ChatlunaTool] Context append result: chatluna=${Boolean(chatlunaContext)}, ollama=${Boolean(ollamaContext)}`)
-
-      const outputWithContext = this.appendContext(this.appendContext(output, chatlunaContext), ollamaContext)
       if (failedLabels.length > 0) {
-        return this.summarizeOutput(`${outputWithContext}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`, 'fact_check(multi)')
+        return this.summarizeOutput(`${output}\n\n[Failed]\n- ${failedLabels.join('\n- ')}`, 'fact_check(multi)')
       }
 
-      return this.summarizeOutput(outputWithContext, 'fact_check(multi)')
+      return this.summarizeOutput(output, 'fact_check(multi)')
     } catch (error: any) {
       this.logger.error('[ChatlunaTool] 核查失败:', error)
       return `[MultiSourceSearch]\n搜索失败: ${error?.message || error}`
