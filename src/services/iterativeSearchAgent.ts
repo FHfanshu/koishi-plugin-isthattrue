@@ -62,8 +62,8 @@ ${focus}
 
   private getEnabledProviders(): ProviderKey[] {
     const providers: ProviderKey[] = []
-    if (this.config.factCheck.geminiModel?.trim()) providers.push('gemini')
-    if (this.config.factCheck.grokModel?.trim()) providers.push('grok')
+    if (this.config.models.geminiModel?.trim()) providers.push('gemini')
+    if (this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()) providers.push('grok')
     return providers
   }
 
@@ -87,9 +87,9 @@ ${focus}
   private getModelName(provider: ProviderKey): string {
     switch (provider) {
       case 'grok':
-        return this.config.factCheck.grokModel?.trim() || ''
+        return this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim() || ''
       case 'gemini':
-        return this.config.factCheck.geminiModel?.trim() || ''
+        return this.config.models.geminiModel?.trim() || ''
       default:
         return ''
     }
@@ -191,7 +191,7 @@ ${focus}
       return {
         agentId: 'deepsearch-model',
         perspective: `DeepSearch 模型搜索: ${query.focus}`,
-        findings: 'DeepSearch 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel。',
+        findings: 'DeepSearch 未配置可用搜索来源。请配置 models.grokModel / models.geminiModel。',
         sources: [],
         confidence: 0,
         failed: true,

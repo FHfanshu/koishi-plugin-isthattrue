@@ -5,6 +5,9 @@ import type { ChatRequest, ChatResponse, PluginConfig } from '../types'
 type Ctx = any
 
 export class ChatlunaAdapter {
+  private static readonly MODEL_BLOCK_TTL_MS = 10 * 60 * 1000
+  private static readonly temporaryBlockedModels = new Map<string, number>()
+
   private readonly logger: any
 
   constructor(private readonly ctx: Ctx, private readonly config: PluginConfig) {
@@ -16,6 +19,10 @@ export class ChatlunaAdapter {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    if (this.isModelTemporarilyBlocked(request.model)) {
+      throw new Error(`模型暂时熔断: ${request.model}`)
+    }
+
     if (!this.isAvailable()) {
       throw new Error('Chatluna 服务不可用，请确保已安装并启用 koishi-plugin-chatluna')
     }
@@ -91,6 +98,12 @@ export class ChatlunaAdapter {
         lastError = error
         this.logger.warn(`请求失败 (尝试 ${attempt + 1}/${maxRetries + 1}):`, error)
 
+        if (this.shouldStopRetryForCurrentModel(error, currentModel)) {
+          this.logger.warn(`检测到 ${currentModel} 返回 SSE 分块解析异常，停止重试该模型`) 
+          this.blockModelTemporarily(currentModel)
+          break
+        }
+
         if (attempt === maxRetries - 1 && fallbackModel && fallbackModel !== currentModel) {
           this.logger.info(`切换到备用模型：${fallbackModel}`)
           currentModel = fallbackModel
@@ -103,6 +116,40 @@ export class ChatlunaAdapter {
     }
 
     throw lastError || new Error('请求失败，已达最大重试次数')
+  }
+
+  private shouldStopRetryForCurrentModel(error: unknown, modelName: string): boolean {
+    const model = (modelName || '').toLowerCase()
+    if (!model.includes('grok')) {
+      return false
+    }
+
+    const message = String((error as any)?.message || error || '').toLowerCase()
+    return message.includes("unexpected token 'd'")
+      || message.includes('is not valid json')
+      || message.includes('chat.completion.chunk')
+      || message.includes('"data: {"')
+  }
+
+  private isModelTemporarilyBlocked(modelName: string): boolean {
+    const now = Date.now()
+    const expiresAt = ChatlunaAdapter.temporaryBlockedModels.get(modelName)
+    if (!expiresAt) {
+      return false
+    }
+
+    if (expiresAt <= now) {
+      ChatlunaAdapter.temporaryBlockedModels.delete(modelName)
+      return false
+    }
+
+    return true
+  }
+
+  private blockModelTemporarily(modelName: string): void {
+    const expiresAt = Date.now() + ChatlunaAdapter.MODEL_BLOCK_TTL_MS
+    ChatlunaAdapter.temporaryBlockedModels.set(modelName, expiresAt)
+    this.logger.warn(`模型临时熔断 ${modelName}，将在 ${Math.round(ChatlunaAdapter.MODEL_BLOCK_TTL_MS / 1000)} 秒后自动恢复`)
   }
 
   private extractSources(content: string): string[] {

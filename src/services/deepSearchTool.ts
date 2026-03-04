@@ -23,7 +23,7 @@ class DeepSearchTool extends Tool {
   name = DEEP_SEARCH_TOOL_NAME
   description = DEEP_SEARCH_TOOL_DESCRIPTION
 
-  static HARD_TIMEOUT_MS = 120_000
+  static HARD_TIMEOUT_MS = 900_000
 
   private readonly logger: any
   private readonly controller: DeepSearchController
@@ -56,19 +56,26 @@ class DeepSearchTool extends Tool {
       return this.handleActionInput(parsedAction.value, parentConfig?.configurable?.session)
     }
 
-    const maxInputChars = this.config.factCheck.maxInputChars || 1200
+    const maxInputChars = this.config.tools.maxInputChars || 1200
     const claim = rawInput.substring(0, maxInputChars)
     if (rawInput.length > maxInputChars) {
       this.logger.warn(`[DeepSearchTool] 输入过长，已截断到 ${maxInputChars} 字符`)
     }
 
     try {
-      const report = await withTimeout(this.controller.search(claim), DeepSearchTool.HARD_TIMEOUT_MS, 'DeepSearch 整体')
+      const report = await withTimeout(this.controller.search(claim), this.getHardTimeoutMs(), 'DeepSearch 整体')
       return this.formatReport(report)
     } catch (error: any) {
       this.logger.error('[DeepSearchTool] 执行失败（可能超时）:', error)
       return `[DeepSearch]\n执行失败: ${error?.message || error}`
     }
+  }
+
+  private getHardTimeoutMs(): number {
+    const rounds = Math.max(1, this.config.search.maxIterations || 1)
+    const perIterationMs = Math.max(5_000, (this.config.search.perIterationTimeout || 30) * 1000)
+    const estimated = rounds * perIterationMs + 15_000
+    return Math.min(Math.max(estimated, 120_000), DeepSearchTool.HARD_TIMEOUT_MS)
   }
 
   private parseActionInput(rawInput: string): ParsedActionInputResult {
@@ -105,8 +112,8 @@ class DeepSearchTool extends Tool {
   }
 
   private async handleActionInput(actionInput: DeepSearchActionInput, session?: any): Promise<string> {
-    if (!this.config.deepSearch.asyncEnable) {
-      return '[DeepSearch]\n异步模式未启用，请在配置中开启 deepSearch.asyncEnable=true'
+    if (!this.config.search.asyncEnable) {
+      return '[DeepSearch]\n异步模式未启用，请在配置中开启 search.asyncEnable=true'
     }
 
     if (actionInput.action === 'submit') {
@@ -115,7 +122,7 @@ class DeepSearchTool extends Tool {
         return '[DeepSearch]\nsubmit 模式缺少 claim 字段'
       }
 
-      const maxInputChars = this.config.factCheck.maxInputChars || 1200
+      const maxInputChars = this.config.tools.maxInputChars || 1200
       const claim = rawClaim.substring(0, maxInputChars)
       if (rawClaim.length > maxInputChars) {
         this.logger.warn(`[DeepSearchTool] submit 输入过长，已截断到 ${maxInputChars} 字符`)
@@ -177,7 +184,7 @@ class DeepSearchTool extends Tool {
   }
 
   private formatReport(report: DeepSearchReport): string {
-    const sourceLimit = this.config.factCheck.maxSources || 5
+    const sourceLimit = this.config.tools.maxSources || 5
     const findingLines = report.keyFindings.length > 0
       ? report.keyFindings.slice(0, 6).map((item) => `- ${item}`).join('\n')
       : '- 无关键发现'
@@ -195,7 +202,7 @@ class DeepSearchTool extends Tool {
 export function registerDeepSearchTool(ctx: Ctx, config: PluginConfig): void {
   const logger = ctx.logger('chatluna-fact-check')
 
-  if (!config.deepSearch.enable) {
+  if (!config.tools.deepSearchEnable) {
     logger.info('[DeepSearchTool] DeepSearch 未启用，跳过工具注册')
     return
   }

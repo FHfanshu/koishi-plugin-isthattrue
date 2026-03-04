@@ -21,9 +21,12 @@ export class SubSearchAgent {
   }
 
   async deepSearch(claim: string): Promise<AgentSearchResult> {
+    const deepSearchGrokModel = this.config.models.deepSearchGrokModel?.trim()
+    const grokFallbackModel = this.config.models.grokModel?.trim()
+
     return this.deepSearchWithModel(
       claim,
-      this.config.factCheck.grokModel || 'x-ai/grok-4-1',
+      this.normalizeDeepSearchGrokModel(deepSearchGrokModel, grokFallbackModel),
       'grok-deep-search',
       'Grok 深度搜索 (X/Twitter)'
     )
@@ -63,6 +66,40 @@ export class SubSearchAgent {
         confidence,
       }
     } catch (error: any) {
+      const fallbackModel = this.config.models.grokModel?.trim()
+      if (
+        fallbackModel
+        && fallbackModel !== modelName
+        && this.shouldFallbackToFastModel(error)
+      ) {
+        this.logger.warn(`[SubSearchAgent] 深搜模型 ${modelName} 返回流式解析异常，回退到 ${fallbackModel}`)
+        return this.deepSearchWithModel(
+          claim,
+          fallbackModel,
+          agentId,
+          `${perspective} (fallback fast)`,
+          promptOverride,
+          systemPromptOverride
+        )
+      }
+
+      const geminiFallback = this.config.models.geminiModel?.trim()
+      if (
+        geminiFallback
+        && geminiFallback !== modelName
+        && this.shouldFallbackToFastModel(error)
+      ) {
+        this.logger.warn(`[SubSearchAgent] 模型 ${modelName} 返回流式解析异常，回退到 Gemini: ${geminiFallback}`)
+        return this.deepSearchWithModel(
+          claim,
+          geminiFallback,
+          agentId,
+          `${perspective} (fallback gemini)`,
+          promptOverride,
+          systemPromptOverride
+        )
+      }
+
       this.logger.error('[SubSearchAgent] 搜索失败:', error)
       return {
         agentId,
@@ -74,6 +111,28 @@ export class SubSearchAgent {
         error: error?.message || String(error),
       }
     }
+  }
+
+  private shouldFallbackToFastModel(error: unknown): boolean {
+    const message = String((error as any)?.message || error || '').toLowerCase()
+    return message.includes("unexpected token 'd'")
+      || message.includes('"data: {"')
+      || message.includes('is not valid json')
+      || message.includes('chat.completion.chunk')
+  }
+
+  private normalizeDeepSearchGrokModel(preferredModel: string | undefined, fallbackModel: string | undefined): string {
+    const preferred = (preferredModel || '').trim()
+    if (!preferred) {
+      return fallbackModel || 'x-ai/grok-4-1'
+    }
+
+    if (/beta/i.test(preferred)) {
+      this.logger.warn(`[SubSearchAgent] deepSearchGrokModel=${preferred} 包含 beta，已回退到 grokModel`) 
+      return fallbackModel || 'x-ai/grok-4-1'
+    }
+
+    return preferred
   }
 
   private parseResponse(content: string): ParsedSubSearchResponse {

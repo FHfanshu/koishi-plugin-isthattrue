@@ -22,7 +22,7 @@ type ProviderTaskOutcome =
   | { status: 'timeout' }
 
 class FactCheckTool extends Tool {
-  static HARD_TIMEOUT_MS = 120_000
+  static HARD_TIMEOUT_MS = 600_000
 
   name: string
   description: string
@@ -45,7 +45,7 @@ class FactCheckTool extends Tool {
   }
 
   private getQuickProvider(): ToolProvider | null {
-    const gemini = this.config.factCheck.geminiModel?.trim()
+    const gemini = this.config.models.geminiModel?.trim()
     if (!gemini) return null
 
     return {
@@ -56,12 +56,12 @@ class FactCheckTool extends Tool {
   }
 
   private normalizeFastReturnMinSuccess(providerCount: number): number {
-    const configured = this.config.factCheck.fastReturnMinSuccess ?? 2
+    const configured = this.config.search.fastReturnMinSuccess ?? 2
     return Math.max(1, Math.min(configured, providerCount))
   }
 
   private getFastReturnPreferredProvider(): ProviderKey | null {
-    const configured = this.config.factCheck.fastReturnPreferredProvider
+    const configured = this.config.search.fastReturnPreferredProvider
     return configured === 'grok' || configured === 'gemini' ? configured : null
   }
 
@@ -95,7 +95,7 @@ class FactCheckTool extends Tool {
         buildFactCheckToolSearchPrompt(claim),
         FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
       ),
-      this.config.factCheck.perSourceTimeout,
+      this.config.search.perSourceTimeout * 1000,
       provider.label
     )
       .then((value) => ({ index, provider, status: 'fulfilled' as const, value }))
@@ -132,22 +132,22 @@ class FactCheckTool extends Tool {
   private getToolProviders(): ToolProvider[] {
     const providers: ToolProvider[] = []
 
-    const grokModel = this.config.factCheck.grokModel?.trim()
+    const grokModel = this.config.models.grokModel?.trim()
     if (grokModel) providers.push({ key: 'grok', label: 'GrokSearch', model: grokModel })
 
-    const geminiModel = this.config.factCheck.geminiModel?.trim()
+    const geminiModel = this.config.models.geminiModel?.trim()
     if (geminiModel) providers.push({ key: 'gemini', label: 'GeminiSearch', model: geminiModel })
 
     return providers
   }
 
   private formatSingleResult(result: AgentSearchResult): string {
-    const findings = this.toShortLine(result.findings, Math.min(this.config.factCheck.maxFindingsChars, 600))
+    const findings = this.toShortLine(result.findings, Math.min(this.config.search.maxFindingsChars, 600))
     const confidence = Number.isFinite(result.confidence)
       ? `${Math.round(result.confidence * 100)}%`
       : '未知'
 
-    const sourceText = this.formatSourcesForContext(result.sources, this.config.factCheck.maxSources)
+    const sourceText = this.formatSourcesForContext(result.sources, this.config.tools.maxSources)
 
     return `${this.buildInternalContextPreamble()}[FactCheckContext]
 模式: single-source
@@ -170,16 +170,16 @@ ${sourceText}`
 
       parts.push(`- 视角: ${result.perspective}`)
       parts.push(`  置信度: ${confidence}`)
-      parts.push(`  关键发现: ${this.toShortLine(result.findings, Math.min(this.config.factCheck.maxFindingsChars, 400))}`)
+      parts.push(`  关键发现: ${this.toShortLine(result.findings, Math.min(this.config.search.maxFindingsChars, 400))}`)
 
       for (const source of result.sources) {
         if (source) allSources.add(source)
       }
     }
 
-    const dedupedSources = [...allSources].slice(0, this.config.factCheck.maxSources)
+    const dedupedSources = [...allSources].slice(0, this.config.tools.maxSources)
     parts.push('[Sources]')
-    parts.push(this.formatSourcesForContext(dedupedSources, this.config.factCheck.maxSources))
+    parts.push(this.formatSourcesForContext(dedupedSources, this.config.tools.maxSources))
     return parts.join('\n')
   }
 
@@ -190,15 +190,25 @@ ${sourceText}`
     }
 
     try {
-      return await withTimeout(this._callInner(rawClaim), FactCheckTool.HARD_TIMEOUT_MS, 'FactCheck 整体')
+      return await withTimeout(this._callInner(rawClaim), this.getHardTimeoutMs(), 'FactCheck 整体')
     } catch (error: any) {
       this.logger.error('[ChatlunaTool] 核查失败（可能超时）:', error)
       return `[FactCheck]\n搜索失败: ${error?.message || error}`
     }
   }
 
+  private getHardTimeoutMs(): number {
+    const perSourceTimeoutMs = this.config.search.perSourceTimeout * 1000
+    const providerCount = this.config.search.enableMultiSourceSearch
+      ? this.getToolProviders().length
+      : (this.getQuickProvider() ? 1 : 0)
+
+    const estimated = Math.max(60_000, perSourceTimeoutMs * Math.max(1, providerCount) + 30_000)
+    return Math.min(Math.max(estimated, 120_000), FactCheckTool.HARD_TIMEOUT_MS)
+  }
+
   private async _callInner(rawClaim: string): Promise<string> {
-    const limit = this.config.factCheck.maxInputChars
+    const limit = this.config.tools.maxInputChars
     const claim = rawClaim.substring(0, limit)
 
     if (rawClaim.length > limit) {
@@ -208,7 +218,7 @@ ${sourceText}`
     try {
       this.logger.info('[ChatlunaTool] 收到事实核查请求')
 
-      const providers = this.config.factCheck.enableMultiSourceSearch
+      const providers = this.config.search.enableMultiSourceSearch
         ? this.getToolProviders()
         : (() => {
             const provider = this.getQuickProvider()
@@ -218,10 +228,10 @@ ${sourceText}`
       this.logger.info(`[ChatlunaTool] providers=${providers.map((p) => `${p.key}:${p.model}`).join(', ') || 'none'}`)
 
       if (providers.length === 0) {
-        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 factCheck.grokModel / factCheck.geminiModel。'
+        return '[FactCheck]\n搜索失败: 未配置可用搜索来源。请配置 models.grokModel / models.geminiModel。'
       }
 
-      if (!this.config.factCheck.enableMultiSourceSearch || providers.length === 1) {
+      if (!this.config.search.enableMultiSourceSearch || providers.length === 1) {
         const provider = providers[0]
 
         const result = await withTimeout(
@@ -233,7 +243,7 @@ ${sourceText}`
             buildFactCheckToolSearchPrompt(claim),
             FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT
           ),
-          this.config.factCheck.perSourceTimeout,
+          this.config.search.perSourceTimeout * 1000,
           provider.label
         )
 
@@ -254,7 +264,7 @@ ${sourceText}`
       let preferredProviderSucceeded = false
       const maxWaitMs = Math.max(
         1000,
-        Math.min(this.config.factCheck.fastReturnMaxWaitMs ?? 12_000, this.config.factCheck.perSourceTimeout)
+        Math.min((this.config.search.fastReturnMaxWait ?? 12) * 1000, this.config.search.perSourceTimeout * 1000)
       )
 
       const targetConcurrency = minSuccess
@@ -357,7 +367,7 @@ ${sourceText}`
 export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
   const logger = ctx.logger('chatluna-fact-check')
 
-  if (!config.factCheck.enable) {
+  if (!config.tools.factCheckEnable) {
     logger.info('[ChatlunaTool] 已禁用工具注册')
     return
   }
@@ -368,16 +378,16 @@ export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
     return
   }
 
-  const quickToolName = sanitizeToolName(config.factCheck.quickToolName, 'fact_check')
+  const quickToolName = sanitizeToolName(config.tools.quickToolName, 'fact_check')
   const quickToolDescription = sanitizeToolDescription(
-    config.factCheck.quickToolDescription,
+    config.tools.quickToolDescription,
     '用于网络搜索与事实核查。输入待核查文本，返回来源与摘要。'
   )
 
   ctx.effect(() => {
     const disposables: Array<() => void> = []
 
-    if (config.factCheck.enableQuickTool) {
+    if (config.tools.enableQuickTool) {
       logger.info(`[ChatlunaTool] 注册工具: ${quickToolName}`)
 
       const disposeQuick = chatluna.platform.registerTool(quickToolName, {
@@ -404,7 +414,7 @@ export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
         disposables.push(disposeQuick)
       }
     } else {
-      logger.warn('[ChatlunaTool] factCheck.enableQuickTool=false，未注册 fact_check 工具')
+      logger.warn('[ChatlunaTool] tools.enableQuickTool=false，未注册 fact_check 工具')
     }
 
     return () => {

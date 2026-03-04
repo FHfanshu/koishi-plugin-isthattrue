@@ -60,7 +60,7 @@ export class DeepSearchController {
     }
 
     const history: DeepSearchHistory = { rounds: [] }
-    const maxIterations = Math.max(1, this.config.deepSearch.maxIterations || 1)
+    const maxIterations = Math.max(1, this.config.search.maxIterations || 1)
 
     for (let i = 0; i < maxIterations; i += 1) {
       const roundNumber = i + 1
@@ -69,7 +69,7 @@ export class DeepSearchController {
       try {
         const roundData = await withTimeout(
           this.runRound(normalizedClaim, history, roundNumber),
-          this.config.deepSearch.perIterationTimeout,
+          this.config.search.perIterationTimeout * 1000,
           `DeepSearch 第 ${roundNumber} 轮`
         )
 
@@ -126,7 +126,7 @@ export class DeepSearchController {
   private async plan(claim: string, history?: DeepSearchHistory): Promise<DeepSearchPlan> {
     const response = await this.chatlunaAdapter.chatWithRetry(
       {
-        model: this.config.deepSearch.controllerModel,
+        model: this.config.models.controllerModel,
         message: buildDeepSearchPlanPrompt(claim, history),
         systemPrompt: DEEP_SEARCH_CONTROLLER_SYSTEM_PROMPT,
       },
@@ -139,7 +139,7 @@ export class DeepSearchController {
   private async evaluate(results: AgentSearchResult[], claim: string, history: DeepSearchHistory): Promise<DeepSearchEvaluation> {
     const response = await this.chatlunaAdapter.chatWithRetry(
       {
-        model: this.config.deepSearch.controllerModel,
+        model: this.config.models.controllerModel,
         message: buildDeepSearchEvaluatePrompt(claim, results, history),
         systemPrompt: DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT,
       },
@@ -152,7 +152,7 @@ export class DeepSearchController {
   private async synthesize(claim: string, history: DeepSearchHistory): Promise<DeepSearchReport> {
     const response = await this.chatlunaAdapter.chatWithRetry(
       {
-        model: this.config.deepSearch.controllerModel,
+        model: this.config.models.controllerModel,
         message: buildDeepSearchSynthesizePrompt(claim, history),
         systemPrompt: DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT,
       },
@@ -272,13 +272,13 @@ export class DeepSearchController {
 
   private getProviderPriorityOrder(): ProviderKey[] {
     const providers: ProviderKey[] = []
-    if (this.config.factCheck.geminiModel?.trim()) providers.push('gemini')
-    if (this.config.factCheck.grokModel?.trim()) providers.push('grok')
+    if (this.config.models.geminiModel?.trim()) providers.push('gemini')
+    if (this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()) providers.push('grok')
     return providers
   }
 
   private launchGrokSupplementalQuery(query: DeepSearchQuery): GrokSupplementalTracker | null {
-    const grokModel = this.config.factCheck.grokModel?.trim()
+    const grokModel = this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()
     if (!grokModel || query.provider === 'grok') {
       return null
     }
@@ -302,14 +302,14 @@ export class DeepSearchController {
   }
 
   private getGrokSupplementalTimeoutMs(): number {
-    const perIterationTimeout = this.config.deepSearch.perIterationTimeout || 30_000
+    const perIterationTimeout = (this.config.search.perIterationTimeout || 30) * 1000
     const calculated = Math.floor(perIterationTimeout * 0.4)
     return Math.max(5_000, Math.min(GROK_SUPPLEMENTAL_TIMEOUT_CAP_MS, calculated))
   }
 
   private getPerQueryTimeoutMs(): number {
-    const perIterationTimeout = this.config.deepSearch.perIterationTimeout || 30_000
-    const configuredPerSource = this.config.factCheck.perSourceTimeout || 45_000
+    const perIterationTimeout = (this.config.search.perIterationTimeout || 30) * 1000
+    const configuredPerSource = (this.config.search.perSourceTimeout || 45) * 1000
     const budget = Math.max(5_000, perIterationTimeout - 3_000)
     return Math.max(5_000, Math.min(configuredPerSource, budget))
   }
@@ -334,12 +334,12 @@ export class DeepSearchController {
       return false
     }
 
-    const minConfidence = this.config.deepSearch.minConfidenceThreshold
+    const minConfidence = this.config.search.minConfidenceThreshold
     if (typeof minConfidence === 'number' && evaluation.confidence < minConfidence) {
       return false
     }
 
-    const minSources = this.config.deepSearch.minSourcesThreshold
+    const minSources = this.config.search.minSourcesThreshold
     if (typeof minSources === 'number') {
       const sourceCount = this.collectAllSources(history).length
       if (sourceCount < minSources) {

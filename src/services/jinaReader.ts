@@ -25,11 +25,11 @@ export class JinaReaderService {
       return null
     }
 
-    const timeout = (this.config as any).jina?.timeout ?? 30000
+    const timeout = (this.config.services.jinaTimeout || 30) * 1000
     const proxyAgent = resolveProxyAgent(this.config.debug)
 
     // First attempt with API key (if configured)
-    const apiKey = (this.config as any).jina?.apiKey?.trim()
+    const apiKey = this.config.services.jinaApiKey?.trim()
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-Timeout': '25', // seconds, slightly less than our own timeout

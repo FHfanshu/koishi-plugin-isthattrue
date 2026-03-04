@@ -22,13 +22,13 @@ export function clipText(input: string, maxLength: number): string {
 }
 
 export function resolveSummaryModel(config: PluginConfig): string {
-  const explicit = config.factCheck.summaryModel?.trim()
+  const explicit = config.models.summaryModel?.trim()
   if (explicit) return explicit
 
-  const gemini = config.factCheck.geminiModel?.trim()
+  const gemini = config.models.geminiModel?.trim()
   if (gemini) return gemini
 
-  const controller = config.deepSearch.controllerModel?.trim()
+  const controller = config.models.controllerModel?.trim()
   if (controller) return controller
 
   return ''
@@ -41,9 +41,9 @@ export async function maybeSummarize(
   label: string
 ): Promise<string> {
   const logger = ctx.logger('chatluna-fact-check')
-  const maxChars = config.factCheck.summaryMaxChars || 800
+  const maxChars = config.search.summaryMaxChars || 800
 
-  if (!config.factCheck.enableSummary) {
+  if (!config.search.enableSummary) {
     return clipText(text, maxChars)
   }
 
@@ -65,7 +65,7 @@ export async function maybeSummarize(
         systemPrompt: SUMMARY_SYSTEM_PROMPT,
         message: `请将以下内容压缩到 ${maxChars} 字以内，保留关键结论和来源：\n\n${text}`,
       }),
-      config.factCheck.summaryTimeoutMs || 15_000,
+      (config.search.summaryTimeout || 15) * 1000,
       `Summary(${label})`
     )
 

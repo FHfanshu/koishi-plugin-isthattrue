@@ -42,7 +42,7 @@ export class DeepSearchTaskService {
     this.cleanupExpiredTasks()
 
     const activeTaskCount = this.queue.length + this.runningCount
-    const maxQueuedTasks = Math.max(1, this.config.deepSearch.asyncMaxQueuedTasks || 100)
+    const maxQueuedTasks = Math.max(1, this.config.search.asyncMaxQueuedTasks || 100)
     if (activeTaskCount >= maxQueuedTasks) {
       throw new Error(`异步任务队列已满（${maxQueuedTasks}）`)
     }
@@ -99,7 +99,7 @@ export class DeepSearchTaskService {
       return
     }
 
-    const maxWorkers = Math.max(1, Math.min(this.config.deepSearch.asyncMaxWorkers || 2, 8))
+    const maxWorkers = Math.max(1, Math.min(this.config.search.asyncMaxWorkers || 2, 8))
 
     while (this.runningCount < maxWorkers && this.queue.length > 0) {
       const taskId = this.queue.shift()
@@ -211,7 +211,7 @@ export class DeepSearchTaskService {
   }
 
   private cleanupExpiredTasks(): void {
-    const ttl = Math.max(60_000, this.config.deepSearch.asyncTaskTtlMs || 600_000)
+    const ttl = Math.max(60_000, (this.config.search.asyncTaskTtl || 600) * 1000)
     const now = Date.now()
 
     for (const [taskId, task] of this.tasks.entries()) {
@@ -245,10 +245,10 @@ export class DeepSearchTaskService {
   }
 
   private getTaskTimeoutMs(): number {
-    const iterationCount = Math.max(1, this.config.deepSearch.maxIterations || 1)
-    const perIterationTimeout = Math.max(5_000, this.config.deepSearch.perIterationTimeout || 30_000)
+    const iterationCount = Math.max(1, this.config.search.maxIterations || 1)
+    const perIterationTimeout = Math.max(5_000, (this.config.search.perIterationTimeout || 30) * 1000)
     const computed = iterationCount * perIterationTimeout + 10_000
-    const ttl = Math.max(60_000, this.config.deepSearch.asyncTaskTtlMs || 600_000)
+    const ttl = Math.max(60_000, (this.config.search.asyncTaskTtl || 600) * 1000)
     return Math.max(15_000, Math.min(computed, ttl))
   }
 

@@ -2,7 +2,7 @@ import { Context } from '@koishijs/client'
 import { computed, defineComponent, inject, onBeforeUnmount, onMounted, type ComputedRef, watch, h } from 'vue'
 
 type NavSection = {
-  key: 'api-key-table' | 'factcheck-tool' | 'agent-search' | 'deep-search' | 'deep-chatluna' | 'debug-troubleshooting'
+  key: 'tools' | 'models' | 'search' | 'services' | 'debug'
   title: string
 }
 
@@ -20,41 +20,34 @@ const PLUGIN_NAMES = new Set([
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: 'API 配置',
+    title: '工具与模型',
     sections: [
-      { key: 'api-key-table', title: 'API Key / Base URL 对照表' },
+      { key: 'tools', title: '工具注册' },
+      { key: 'models', title: 'LLM AI 接入' },
     ],
   },
   {
-    title: 'FactCheck',
+    title: '搜索与服务',
     sections: [
-      { key: 'factcheck-tool', title: 'Fact Check 工具' },
-      { key: 'agent-search', title: '搜索配置' },
-    ],
-  },
-  {
-    title: 'DeepSearch',
-    sections: [
-      { key: 'deep-search', title: '迭代搜索' },
-      { key: 'deep-chatluna', title: 'Chatluna 搜索集成' },
+      { key: 'search', title: '搜索策略' },
+      { key: 'services', title: '外部服务' },
     ],
   },
   {
     title: '调试/兼容',
     sections: [
-      { key: 'debug-troubleshooting', title: '调试与排障' },
+      { key: 'debug', title: '调试与排障' },
     ],
   },
 ] 
 
 const NAV_SECTIONS: NavSection[] = NAV_GROUPS.flatMap((group) => group.sections)
 const SECTION_TITLE_ALIASES: Record<NavSection['key'], string[]> = {
-  'api-key-table': ['API Key / Base URL 对照表', 'API Key / Base URL 统一配置', '统一配置', 'Ollama 配置'],
-  'factcheck-tool': ['Fact Check 工具', 'FactCheck 基础', 'Agent 工具配置'],
-  'agent-search': ['搜索配置', '搜索源上下文注入', '多源搜索配置', 'SearXNG 搜索集成'],
-  'deep-search': ['迭代搜索', 'DeepSearch 迭代搜索', 'DeepSearch 配置', 'DeepSearch'],
-  'deep-chatluna': ['Chatluna 搜索集成'],
-  'debug-troubleshooting': ['调试与排障', '调试'],
+  tools: ['工具注册', 'Fact Check 工具', 'Deep Search 工具', 'Web Fetch 工具'],
+  models: ['LLM AI 接入', '模型接入', 'AI 模型接入'],
+  search: ['搜索策略', '搜索配置', '超时配置', '排序与策略', '最大字数'],
+  services: ['外部服务', 'Grok 网络搜索', 'Jina Reader 配置'],
+  debug: ['调试与排障', '调试'],
 }
 
 const STYLE_ID = 'isthattrue-nav-style'

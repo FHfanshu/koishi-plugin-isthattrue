@@ -1,5 +1,5 @@
-import { defineComponent as I, inject as A, computed as P, onMounted as T, watch as M, onBeforeUnmount as N, h as B } from "vue";
-const D = /* @__PURE__ */ new Set([
+import { defineComponent as I, inject as M, computed as T, onMounted as A, watch as N, onBeforeUnmount as z, h as P } from "vue";
+const F = /* @__PURE__ */ new Set([
   "isthattrue",
   // legacy package name
   "chatluna-fact-check",
@@ -8,40 +8,33 @@ const D = /* @__PURE__ */ new Set([
   "koishi-plugin-chatluna-fact-check"
 ]), C = [
   {
-    title: "API 配置",
+    title: "工具与模型",
     sections: [
-      { key: "api-key-table", title: "API Key / Base URL 对照表" }
+      { key: "tools", title: "工具注册" },
+      { key: "models", title: "LLM AI 接入" }
     ]
   },
   {
-    title: "FactCheck",
+    title: "搜索与服务",
     sections: [
-      { key: "factcheck-tool", title: "Fact Check 工具" },
-      { key: "agent-search", title: "搜索配置" }
-    ]
-  },
-  {
-    title: "DeepSearch",
-    sections: [
-      { key: "deep-search", title: "迭代搜索" },
-      { key: "deep-chatluna", title: "Chatluna 搜索集成" }
+      { key: "search", title: "搜索策略" },
+      { key: "services", title: "外部服务" }
     ]
   },
   {
     title: "调试/兼容",
     sections: [
-      { key: "debug-troubleshooting", title: "调试与排障" }
+      { key: "debug", title: "调试与排障" }
     ]
   }
-], F = C.flatMap((t) => t.sections), L = {
-  "api-key-table": ["API Key / Base URL 对照表", "API Key / Base URL 统一配置", "统一配置", "Ollama 配置"],
-  "factcheck-tool": ["Fact Check 工具", "FactCheck 基础", "Agent 工具配置"],
-  "agent-search": ["搜索配置", "搜索源上下文注入", "多源搜索配置", "SearXNG 搜索集成"],
-  "deep-search": ["迭代搜索", "DeepSearch 迭代搜索", "DeepSearch 配置", "DeepSearch"],
-  "deep-chatluna": ["Chatluna 搜索集成"],
-  "debug-troubleshooting": ["调试与排障", "调试"]
+], O = C.flatMap((t) => t.sections), L = {
+  tools: ["工具注册", "Fact Check 工具", "Deep Search 工具", "Web Fetch 工具"],
+  models: ["LLM AI 接入", "模型接入", "AI 模型接入"],
+  search: ["搜索策略", "搜索配置", "超时配置", "排序与策略", "最大字数"],
+  services: ["外部服务", "Grok 网络搜索", "Jina Reader 配置"],
+  debug: ["调试与排障", "调试"]
 }, b = "isthattrue-nav-style";
-function z() {
+function B() {
   if (document.getElementById(b)) return;
   const t = document.createElement("style");
   t.id = b, t.textContent = `
@@ -120,7 +113,7 @@ function z() {
 }
 `, document.head.appendChild(t);
 }
-function h(t) {
+function p(t) {
   return t.replace(/\s+/g, "").trim();
 }
 function w() {
@@ -128,21 +121,21 @@ function w() {
     ".k-schema-section-title, .k-schema-header, h2.k-schema-header"
   ));
 }
-function O(t) {
-  const e = [t.title, ...L[t.key] || []].map((i) => h(i)).filter(Boolean), a = w();
-  for (const i of a) {
-    const o = h(i.textContent || "");
+function D(t) {
+  const e = [t.title, ...L[t.key] || []].map((i) => p(i)).filter(Boolean), r = w();
+  for (const i of r) {
+    const o = p(i.textContent || "");
     if (o && e.some((d) => o.includes(d)))
       return i;
   }
   return null;
 }
 function S(t) {
-  const e = h(t);
-  return F.find((a) => [a.title, ...L[a.key] || []].map((o) => h(o)).filter(Boolean).some((o) => e.includes(o)));
+  const e = p(t);
+  return O.find((r) => [r.title, ...L[r.key] || []].map((o) => p(o)).filter(Boolean).some((o) => e.includes(o)));
 }
-function U() {
-  z();
+function _() {
+  B();
   const t = document.querySelector(".isthattrue-nav");
   t == null || t.remove();
   const e = document.createElement("div");
@@ -153,40 +146,40 @@ function U() {
 </div>
 <div class="isthattrue-nav-body"></div>
 `, document.body.appendChild(e);
-  const a = e.querySelector(".isthattrue-nav-body"), i = e.querySelector(".isthattrue-nav-toggle"), o = e.querySelector(".isthattrue-nav-header"), d = /* @__PURE__ */ new Map();
+  const r = e.querySelector(".isthattrue-nav-body"), i = e.querySelector(".isthattrue-nav-toggle"), o = e.querySelector(".isthattrue-nav-header"), d = /* @__PURE__ */ new Map();
   for (const n of C) {
-    const r = document.createElement("div");
-    r.className = "isthattrue-nav-group", r.textContent = n.title, a.appendChild(r);
+    const a = document.createElement("div");
+    a.className = "isthattrue-nav-group", a.textContent = n.title, r.appendChild(a);
     for (const s of n.sections) {
       const c = document.createElement("button");
       c.type = "button", c.className = "isthattrue-nav-item", c.textContent = s.title, c.addEventListener("click", () => {
-        const u = O(s);
+        const u = D(s);
         u && u.scrollIntoView({ behavior: "smooth", block: "start" });
-      }), a.appendChild(c), d.set(s.key, c);
+      }), r.appendChild(c), d.set(s.key, c);
     }
   }
   i.addEventListener("click", (n) => {
     n.stopPropagation();
-    const r = e.classList.toggle("collapsed");
-    i.textContent = r ? "⌃" : "⌄";
+    const a = e.classList.toggle("collapsed");
+    i.textContent = a ? "⌃" : "⌄";
   });
-  let p = 0, m = 0, g = 0, f = 0;
+  let h = 0, m = 0, g = 0, f = 0;
   o.addEventListener("pointerdown", (n) => {
-    n.target.closest(".isthattrue-nav-toggle") || (n.preventDefault(), o.setPointerCapture(n.pointerId), p = n.clientX, m = n.clientY, g = parseFloat(e.style.right || "60"), f = parseFloat(e.style.top || "260"));
+    n.target.closest(".isthattrue-nav-toggle") || (n.preventDefault(), o.setPointerCapture(n.pointerId), h = n.clientX, m = n.clientY, g = parseFloat(e.style.right || "60"), f = parseFloat(e.style.top || "260"));
   }), o.addEventListener("pointermove", (n) => {
     if (!o.hasPointerCapture(n.pointerId)) return;
-    const r = n.clientX - p, s = n.clientY - m;
-    e.style.top = `${Math.max(0, f + s)}px`, e.style.right = `${Math.max(0, g - r)}px`;
+    const a = n.clientX - h, s = n.clientY - m;
+    e.style.top = `${Math.max(0, f + s)}px`, e.style.right = `${Math.max(0, g - a)}px`;
   });
   const v = (n) => {
     o.hasPointerCapture(n.pointerId) && o.releasePointerCapture(n.pointerId);
   };
   o.addEventListener("pointerup", v), o.addEventListener("pointercancel", v);
   let l = null;
-  const y = () => {
-    l == null || l.disconnect(), l = new IntersectionObserver((r) => {
+  const x = () => {
+    l == null || l.disconnect(), l = new IntersectionObserver((a) => {
       var s;
-      for (const c of r) {
+      for (const c of a) {
         if (!c.isIntersecting) continue;
         const u = (c.target.textContent || "").trim(), k = S(u);
         if (k) {
@@ -201,37 +194,37 @@ function U() {
       threshold: 0
     });
     const n = w();
-    for (const r of n) {
-      const s = r.textContent || "";
-      S(s) && l.observe(r);
+    for (const a of n) {
+      const s = a.textContent || "";
+      S(s) && l.observe(a);
     }
-  }, x = new MutationObserver(() => {
-    window.setTimeout(y, 200);
+  }, y = new MutationObserver(() => {
+    window.setTimeout(x, 200);
   });
-  return x.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(y, 300), () => {
-    l == null || l.disconnect(), x.disconnect(), e.remove();
+  return y.observe(document.body, { childList: !0, subtree: !0 }), window.setTimeout(x, 300), () => {
+    l == null || l.disconnect(), y.disconnect(), e.remove();
   };
 }
-const _ = I({
+const q = I({
   name: "FactCheckDetailsLoader",
   setup() {
-    const t = A("plugin:name"), e = P(() => {
+    const t = M("plugin:name"), e = T(() => {
       const o = t == null ? void 0 : t.value;
-      return !!o && D.has(o);
+      return !!o && F.has(o);
     });
-    let a = null;
+    let r = null;
     const i = () => {
-      a == null || a(), a = null, e.value && (a = U());
+      r == null || r(), r = null, e.value && (r = _());
     };
-    return T(i), M(e, i), N(() => a == null ? void 0 : a()), () => B("div", { style: { display: "none" } });
+    return A(i), N(e, i), z(() => r == null ? void 0 : r()), () => P("div", { style: { display: "none" } });
   }
-}), R = (t) => {
+}), G = (t) => {
   t.slot({
     type: "plugin-details",
-    component: _,
+    component: q,
     order: -999
   });
 };
 export {
-  R as default
+  G as default
 };

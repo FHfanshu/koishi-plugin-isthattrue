@@ -7,66 +7,69 @@ export enum Verdict {
 
 export type ProviderKey = 'grok' | 'gemini'
 export type SearchScope = 'agent' | 'deepsearch'
+export type ProxyMode = 'follow-global' | 'direct' | 'custom'
 
-export interface AgentConfig {
-  enable: boolean
+export interface ToolsConfig {
+  factCheckEnable: boolean
   enableQuickTool: boolean
   quickToolName: string
   quickToolDescription: string
   maxInputChars: number
   maxSources: number
-  enableMultiSourceSearch: boolean
+  deepSearchEnable: boolean
+  webFetchEnable: boolean
+  webFetchToolName: string
+  webFetchToolDescription: string
+  webFetchMaxContentChars: number
+  webFetchProviderOrder: 'grok-first' | 'jina-first'
+}
+
+export interface ModelsConfig {
   grokModel: string
+  deepSearchGrokModel: string
   geminiModel: string
+  controllerModel: string
+  summaryModel: string
+}
+
+export interface SearchConfig {
+  enableMultiSourceSearch: boolean
   perSourceTimeout: number
   fastReturnMinSuccess: number
   fastReturnPreferredProvider: ProviderKey | ''
-  fastReturnMaxWaitMs: number
+  fastReturnMaxWait: number
   maxFindingsChars: number
   enableSummary: boolean
-  summaryModel: string
   summaryMaxChars: number
-  summaryTimeoutMs: number
-}
-
-export interface DeepSearchConfig {
-  enable: boolean
-  asyncEnable: boolean
-  asyncMaxWorkers: number
-  asyncTaskTtlMs: number
-  asyncMaxQueuedTasks: number
-  controllerModel: string
+  summaryTimeout: number
   maxIterations: number
   perIterationTimeout: number
   minConfidenceThreshold: number | null
   minSourcesThreshold: number | null
+  asyncEnable: boolean
+  asyncMaxWorkers: number
+  asyncTaskTtl: number
+  asyncMaxQueuedTasks: number
 }
 
-export type ProxyMode = 'follow-global' | 'direct' | 'custom'
+export interface ServicesConfig {
+  jinaApiKey: string
+  jinaTimeout: number
+}
 
-export interface FactCheckConfig {
+export interface DebugConfig {
   maxRetries: number
   proxyMode: ProxyMode
   proxyAddress: string
   logLLMDetails: boolean
 }
 
-export interface GrokWebSearchConfig {
-  apiBaseUrl: string
-  timeout: number
-}
-
-export interface JinaReaderConfig {
-  apiKey: string
-  timeout: number
-}
-
 export interface PluginConfig {
-  grokWebSearch: GrokWebSearchConfig
-  jina: JinaReaderConfig
-  factCheck: AgentConfig
-  deepSearch: DeepSearchConfig
-  debug: FactCheckConfig
+  tools: ToolsConfig
+  models: ModelsConfig
+  search: SearchConfig
+  services: ServicesConfig
+  debug: DebugConfig
 }
 
 export interface SearchResultItem {

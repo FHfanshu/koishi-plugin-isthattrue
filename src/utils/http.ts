@@ -1,6 +1,6 @@
-import type { FactCheckConfig } from '../types'
+import type { DebugConfig } from '../types'
 
-export function resolveProxyAgent(factCheck: FactCheckConfig): string | undefined {
+export function resolveProxyAgent(factCheck: DebugConfig): string | undefined {
   if (factCheck.proxyMode === 'direct') return ''
 
   if (factCheck.proxyMode === 'custom') {
