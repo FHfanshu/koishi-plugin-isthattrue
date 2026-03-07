@@ -34,7 +34,7 @@ export class DeepSearchTaskService {
     this.tasks.clear()
   }
 
-  submit(claim: string, session?: any): DeepSearchTask {
+  submit(claim: string, session?: any, conversationId?: string): DeepSearchTask {
     if (this.disposed) {
       throw new Error('DeepSearchTaskService 已释放，无法提交任务')
     }
@@ -58,6 +58,7 @@ export class DeepSearchTaskService {
       updatedAt: now,
       ownerId: this.resolveTaskOwner(session) || undefined,
       session,
+      conversationId,
     }
 
     this.tasks.set(taskId, task)
@@ -134,7 +135,7 @@ export class DeepSearchTaskService {
       task.report = report
       task.finishedAt = Date.now()
       task.updatedAt = task.finishedAt
-      await this.notifyCharacterTaskCompletion(task)
+      await this.notifyTaskCompletion(task)
     } catch (error: any) {
       const message = error?.message || 'unknown error'
       const now = Date.now()
@@ -142,26 +143,18 @@ export class DeepSearchTaskService {
       task.error = message
       task.finishedAt = now
       task.updatedAt = now
-      await this.notifyCharacterTaskCompletion(task)
+      await this.notifyTaskCompletion(task)
     }
   }
 
-  private async notifyCharacterTaskCompletion(task: DeepSearchTask): Promise<void> {
+  private async notifyTaskCompletion(task: DeepSearchTask): Promise<void> {
     if (this.disposed) {
       return
     }
 
     const session = task.session
-    if (!session) {
-      return
-    }
 
-    const character = this.ctx.chatluna_character
-    if (!character?.broadcastOnBot || !character?.triggerCollect) {
-      return
-    }
-
-    const rawMessage = this.buildCharacterMessage(task)
+    const rawMessage = this.buildCompletionMessage(task)
     if (!rawMessage) {
       return
     }
@@ -169,18 +162,52 @@ export class DeepSearchTaskService {
     const message = await maybeSummarize(this.ctx, this.config, rawMessage, `DeepSearch回推(${task.taskId})`)
 
     try {
-      await character.broadcastOnBot(session, [h.text(message)])
-      const reason = task.status === 'succeeded' ? 'deep_search_complete' : 'deep_search_failed'
-      const triggered = await character.triggerCollect(session, reason)
-      if (!triggered) {
-        this.logger.warn(`[DeepSearchTaskService] 任务 ${task.taskId} 回推后未触发收集（响应锁可能占用）`)
+      const pushed = this.pushToChatlunaConversation(task, message)
+      if (!pushed && session) {
+        await this.notifyCharacterFallback(session, message, task)
       }
     } catch (error: any) {
       this.logger.warn(`[DeepSearchTaskService] 任务 ${task.taskId} 回推失败: ${error?.message || error}`)
     }
   }
 
-  private buildCharacterMessage(task: DeepSearchTask): string {
+  private pushToChatlunaConversation(task: DeepSearchTask, message: string): boolean {
+    const contextManager = this.ctx.chatluna?.contextManager
+    if (!contextManager?.inject) {
+      return false
+    }
+
+    const conversationId = this.resolveConversationId(task)
+    if (!conversationId) {
+      return false
+    }
+
+    contextManager.inject({
+      conversationId,
+      name: `deep_search_${task.status}`,
+      value: message,
+      once: true,
+      stage: 'injections',
+    })
+    this.logger.info(`[DeepSearchTaskService] 任务 ${task.taskId} 已注入 chatluna 上下文: ${conversationId}`)
+    return true
+  }
+
+  private async notifyCharacterFallback(session: any, message: string, task: DeepSearchTask): Promise<void> {
+    const character = this.ctx.chatluna_character
+    if (!character?.broadcastOnBot || !character?.triggerCollect) {
+      return
+    }
+
+    await character.broadcastOnBot(session, [h.text(message)])
+    const reason = task.status === 'succeeded' ? 'deep_search_complete' : 'deep_search_failed'
+    const triggered = await character.triggerCollect(session, reason)
+    if (!triggered) {
+      this.logger.warn(`[DeepSearchTaskService] 任务 ${task.taskId} 回推后未触发收集（响应锁可能占用）`)
+    }
+  }
+
+  private buildCompletionMessage(task: DeepSearchTask): string {
     if (task.status === 'failed') {
       return `深度搜索任务已完成，但执行失败。\nclaim: ${clipText(task.claim, 120)}\nerror: ${task.error || 'unknown error'}`
     }
@@ -208,6 +235,26 @@ export class DeepSearchTaskService {
     ]
       .filter(Boolean)
       .join('\n')
+  }
+
+  private resolveConversationId(task: DeepSearchTask): string {
+    if (typeof task.conversationId === 'string' && task.conversationId) {
+      return task.conversationId
+    }
+
+    const session = task.session
+    const sessionConversationId = typeof session?.conversationId === 'string' ? session.conversationId : ''
+    if (sessionConversationId) {
+      return sessionConversationId
+    }
+
+    const guildId = typeof session?.guildId === 'string' ? session.guildId : ''
+    if (guildId) {
+      return guildId
+    }
+
+    const channelId = typeof session?.channelId === 'string' ? session.channelId : ''
+    return channelId
   }
 
   private cleanupExpiredTasks(): void {

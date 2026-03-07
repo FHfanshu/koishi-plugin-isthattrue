@@ -8,6 +8,7 @@ import {
   DEEP_SEARCH_EVALUATE_SYSTEM_PROMPT,
   DEEP_SEARCH_SYNTHESIZE_SYSTEM_PROMPT,
 } from '../utils/prompts'
+import { normalizeModelName } from '../utils/model'
 import { withTimeout } from '../utils/async'
 
 import type {
@@ -272,13 +273,13 @@ export class DeepSearchController {
 
   private getProviderPriorityOrder(): ProviderKey[] {
     const providers: ProviderKey[] = []
-    if (this.config.models.geminiModel?.trim()) providers.push('gemini')
-    if (this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()) providers.push('grok')
+    if (normalizeModelName(this.config.models.geminiModel)) providers.push('gemini')
+    if (normalizeModelName(this.config.models.deepSearchGrokModel) || normalizeModelName(this.config.models.grokModel)) providers.push('grok')
     return providers
   }
 
   private launchGrokSupplementalQuery(query: DeepSearchQuery): GrokSupplementalTracker | null {
-    const grokModel = this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()
+    const grokModel = normalizeModelName(this.config.models.deepSearchGrokModel) || normalizeModelName(this.config.models.grokModel)
     if (!grokModel || query.provider === 'grok') {
       return null
     }

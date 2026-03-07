@@ -3,6 +3,7 @@ import { Tool } from '@langchain/core/tools'
 import type { PluginConfig } from '../types'
 import { ChatlunaAdapter } from './chatluna'
 import { JinaReaderService } from './jinaReader'
+import { normalizeModelName } from '../utils/model'
 import { truncate } from '../utils/text'
 import { isSafePublicHttpUrl, normalizeUrl } from '../utils/url'
 
@@ -77,7 +78,7 @@ class WebFetchTool extends Tool {
   }
 
   private async fetchWithGrok(url: string): Promise<string | null> {
-    const model = this.config.models.grokModel?.trim()
+    const model = normalizeModelName(this.config.models.grokModel)
     if (!model) {
       return null
     }

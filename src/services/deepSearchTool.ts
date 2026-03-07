@@ -53,7 +53,8 @@ class DeepSearchTool extends Tool {
       return `[DeepSearch]\n${parsedAction.message}`
     }
     if (parsedAction.type === 'valid') {
-      return this.handleActionInput(parsedAction.value, parentConfig?.configurable?.session)
+      const configurable = parentConfig?.configurable as { session?: any; conversationId?: string } | undefined
+      return this.handleActionInput(parsedAction.value, configurable?.session, configurable?.conversationId)
     }
 
     const maxInputChars = this.config.tools.maxInputChars || 1200
@@ -111,7 +112,11 @@ class DeepSearchTool extends Tool {
     }
   }
 
-  private async handleActionInput(actionInput: DeepSearchActionInput, session?: any): Promise<string> {
+  private async handleActionInput(
+    actionInput: DeepSearchActionInput,
+    session?: any,
+    conversationId?: string
+  ): Promise<string> {
     if (!this.config.search.asyncEnable) {
       return '[DeepSearch]\n异步模式未启用，请在配置中开启 search.asyncEnable=true'
     }
@@ -129,7 +134,7 @@ class DeepSearchTool extends Tool {
       }
 
       try {
-        const task = this.taskService.submit(claim, session)
+        const task = this.taskService.submit(claim, session, conversationId)
         return `[DeepSearch]\n任务已提交\ntaskId: ${task.taskId}\n状态: ${task.status}`
       } catch (error: any) {
         return `[DeepSearch]\n任务提交失败: ${error?.message || error}`

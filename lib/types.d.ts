@@ -135,6 +135,7 @@ export interface DeepSearchTask {
     report?: DeepSearchReport;
     error?: string;
     session?: any;
+    conversationId?: string;
 }
 export interface ChatRequest {
     model: string;

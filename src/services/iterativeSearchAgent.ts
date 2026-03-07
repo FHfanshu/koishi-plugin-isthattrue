@@ -2,6 +2,7 @@ import { SubSearchAgent } from '../agents/subSearchAgent'
 import { GrokWebSearchService } from './grokWebSearch'
 import { JinaReaderService } from './jinaReader'
 import { DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
+import { normalizeModelName } from '../utils/model'
 import { truncate } from '../utils/text'
 import { isSafePublicHttpUrl, normalizeUrl } from '../utils/url'
 
@@ -62,8 +63,8 @@ ${focus}
 
   private getEnabledProviders(): ProviderKey[] {
     const providers: ProviderKey[] = []
-    if (this.config.models.geminiModel?.trim()) providers.push('gemini')
-    if (this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim()) providers.push('grok')
+    if (normalizeModelName(this.config.models.geminiModel)) providers.push('gemini')
+    if (normalizeModelName(this.config.models.deepSearchGrokModel) || normalizeModelName(this.config.models.grokModel)) providers.push('grok')
     return providers
   }
 
@@ -87,9 +88,9 @@ ${focus}
   private getModelName(provider: ProviderKey): string {
     switch (provider) {
       case 'grok':
-        return this.config.models.deepSearchGrokModel?.trim() || this.config.models.grokModel?.trim() || ''
+        return normalizeModelName(this.config.models.deepSearchGrokModel) || normalizeModelName(this.config.models.grokModel)
       case 'gemini':
-        return this.config.models.geminiModel?.trim() || ''
+        return normalizeModelName(this.config.models.geminiModel)
       default:
         return ''
     }

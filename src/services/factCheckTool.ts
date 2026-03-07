@@ -3,6 +3,7 @@ import { Tool } from '@langchain/core/tools'
 import { SubSearchAgent } from '../agents/subSearchAgent'
 import { withTimeout } from '../utils/async'
 import { buildFactCheckToolSearchPrompt, FACT_CHECK_TOOL_SEARCH_SYSTEM_PROMPT } from '../utils/prompts'
+import { normalizeModelName } from '../utils/model'
 import { maybeSummarize } from '../utils/summary'
 import { truncate } from '../utils/text'
 
@@ -45,7 +46,7 @@ class FactCheckTool extends Tool {
   }
 
   private getQuickProvider(): ToolProvider | null {
-    const gemini = this.config.models.geminiModel?.trim()
+    const gemini = normalizeModelName(this.config.models.geminiModel)
     if (!gemini) return null
 
     return {
@@ -77,6 +78,12 @@ class FactCheckTool extends Tool {
 
   private toShortLine(text: string | undefined, maxChars: number): string {
     return truncate((text || '').replace(/\s+/g, ' ').trim(), maxChars, '无')
+  }
+
+  private formatFindingsForContext(text: string | undefined, maxChars: number): string {
+    const normalized = (text || '').trim()
+    if (!normalized) return '无'
+    return truncate(normalized, maxChars, '无')
   }
 
   private formatSourcesForContext(sources: string[], limit: number): string {
@@ -132,17 +139,17 @@ class FactCheckTool extends Tool {
   private getToolProviders(): ToolProvider[] {
     const providers: ToolProvider[] = []
 
-    const grokModel = this.config.models.grokModel?.trim()
+    const grokModel = normalizeModelName(this.config.models.grokModel)
     if (grokModel) providers.push({ key: 'grok', label: 'GrokSearch', model: grokModel })
 
-    const geminiModel = this.config.models.geminiModel?.trim()
+    const geminiModel = normalizeModelName(this.config.models.geminiModel)
     if (geminiModel) providers.push({ key: 'gemini', label: 'GeminiSearch', model: geminiModel })
 
     return providers
   }
 
   private formatSingleResult(result: AgentSearchResult): string {
-    const findings = this.toShortLine(result.findings, Math.min(this.config.search.maxFindingsChars, 600))
+    const findings = this.formatFindingsForContext(result.findings, this.config.search.maxFindingsChars)
     const confidence = Number.isFinite(result.confidence)
       ? `${Math.round(result.confidence * 100)}%`
       : '未知'
@@ -170,7 +177,7 @@ ${sourceText}`
 
       parts.push(`- 视角: ${result.perspective}`)
       parts.push(`  置信度: ${confidence}`)
-      parts.push(`  关键发现: ${this.toShortLine(result.findings, Math.min(this.config.search.maxFindingsChars, 400))}`)
+      parts.push(`  关键发现: ${this.formatFindingsForContext(result.findings, this.config.search.maxFindingsChars)}`)
 
       for (const source of result.sources) {
         if (source) allSources.add(source)

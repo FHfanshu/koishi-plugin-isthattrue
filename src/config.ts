@@ -7,7 +7,7 @@ const toolsSchema = Schema.intersect([
     factCheckEnable: Schema.boolean().default(true).description('开启：注册事实核查为 Chatluna 可调用工具'),
     enableQuickTool: Schema.boolean().default(true).description('开启：注册快速网络搜索工具（默认工具名为 fact_check）'),
     quickToolName: Schema.string().default('fact_check').description('快速搜索工具名称（建议保持 fact_check）'),
-    quickToolDescription: Schema.string().default('用于快速网络搜索。输入待核查文本，返回来源与摘要，适合作为常规 fact_check 工具。').description('快速搜索工具描述'),
+    quickToolDescription: Schema.string().default('用于联网事实核查与时效信息搜索。默认优先返回 GrokSearch 的 findings 与原始来源链接，供上层 Agent 直接使用。').description('快速搜索工具描述'),
     maxInputChars: Schema.number().min(100).max(10_000).default(1_200).description('Chatluna 工具单次输入文本最大字符数'),
     maxSources: Schema.number().min(1).max(20).default(5).description('Chatluna 工具返回来源链接数量上限'),
   }).description('Fact Check 工具'),
@@ -15,7 +15,7 @@ const toolsSchema = Schema.intersect([
     deepSearchEnable: Schema.boolean().default(false).description('启用 DeepSearch 迭代搜索模式（同时注册 deep_search 工具）'),
   }).description('Deep Search 工具'),
   Schema.object({
-    webFetchEnable: Schema.boolean().default(true).description('启用 web_fetch 工具注册'),
+    webFetchEnable: Schema.boolean().default(false).description('启用 web_fetch 工具注册'),
     webFetchToolName: Schema.string().default('web_fetch').description('web_fetch 工具名称'),
     webFetchToolDescription: Schema.string().default('用于获取指定 URL 的网页内容。输入 URL，返回提取后的正文文本。').description('web_fetch 工具描述'),
     webFetchMaxContentChars: Schema.number().min(500).max(50_000).default(8_000).description('web_fetch 返回内容最大字符数（超出则截断）'),
@@ -27,7 +27,7 @@ const toolsSchema = Schema.intersect([
 ]).description('工具注册')
 
 const modelsSchema = Schema.object({
-  grokModel: Schema.dynamic('model').default('x-ai/grok-4-1').description('FactCheck 使用的 Grok 来源模型（留空则跳过 Grok 来源）'),
+  grokModel: Schema.dynamic('model').default('Grok2api/grok-4.1-fast').description('FactCheck 使用的 Grok 来源模型（留空则跳过 Grok 来源）'),
   deepSearchGrokModel: Schema.dynamic('model').default('').description('DeepSearch 专用 Grok 模型（建议使用非 beta；留空则回退使用 grokModel）'),
   geminiModel: Schema.dynamic('model').default('').description('Gemini 来源模型（FactCheck 与 DeepSearch 共用，留空则跳过 Gemini 来源）'),
   controllerModel: Schema.dynamic('model').default('google/gemini-3-flash').description('DeepSearch 主控模型（用于规划、评估、综合）'),
@@ -42,7 +42,7 @@ const searchSchema = Schema.intersect([
       Schema.const('').description('不指定优先来源'),
       Schema.const('grok').description('优先等待 Grok 来源'),
       Schema.const('gemini').description('优先等待 Gemini 来源'),
-    ]).default('').description('fact_check 多源模式：指定优先来源时，优先来源成功后立即返回（其他来源作为补充）'),
+    ]).default('grok').description('fact_check 多源模式：指定优先来源时，优先来源成功后立即返回（其他来源作为补充）'),
   }).description('排序与策略'),
   Schema.object({
     maxFindingsChars: Schema.number().min(200).max(8_000).default(2_000).description('fact_check 输出中每个来源 findings 的最大字符数'),
@@ -56,7 +56,7 @@ const searchSchema = Schema.intersect([
     asyncTaskTtl: Schema.number().min(60).max(86_400).default(600).description('DeepSearch 异步任务过期时间（秒，默认 10 分钟）'),
   }).description('超时配置'),
   Schema.object({
-    enableSummary: Schema.boolean().default(true).description('启用摘要压缩：将搜索结果用 LLM 压缩后再注入 character 上下文，防止 token 过长触发 103 错误'),
+    enableSummary: Schema.boolean().default(false).description('启用摘要压缩：将搜索结果用 LLM 压缩后再注入 character 上下文，防止 token 过长触发 103 错误'),
     maxIterations: Schema.number().min(1).max(8).default(3).description('DeepSearch 最大迭代轮数'),
     asyncEnable: Schema.boolean().default(true).description('启用 DeepSearch 异步任务模式（在 deep_search 中使用 JSON action=submit/status/result）'),
     asyncMaxWorkers: Schema.number().min(1).max(8).default(2).description('DeepSearch 异步任务 worker 并发数（默认保守值 2）'),

@@ -1,5 +1,6 @@
 import { ChatlunaAdapter } from '../services/chatluna'
 import { buildSubSearchPrompt, DEEP_SEARCH_AGENT_SYSTEM_PROMPT } from '../utils/prompts'
+import { normalizeModelName } from '../utils/model'
 
 import type { AgentSearchResult, PluginConfig } from '../types'
 
@@ -21,8 +22,8 @@ export class SubSearchAgent {
   }
 
   async deepSearch(claim: string): Promise<AgentSearchResult> {
-    const deepSearchGrokModel = this.config.models.deepSearchGrokModel?.trim()
-    const grokFallbackModel = this.config.models.grokModel?.trim()
+    const deepSearchGrokModel = normalizeModelName(this.config.models.deepSearchGrokModel)
+    const grokFallbackModel = normalizeModelName(this.config.models.grokModel)
 
     return this.deepSearchWithModel(
       claim,
@@ -66,7 +67,7 @@ export class SubSearchAgent {
         confidence,
       }
     } catch (error: any) {
-      const fallbackModel = this.config.models.grokModel?.trim()
+      const fallbackModel = normalizeModelName(this.config.models.grokModel)
       if (
         fallbackModel
         && fallbackModel !== modelName
@@ -83,7 +84,7 @@ export class SubSearchAgent {
         )
       }
 
-      const geminiFallback = this.config.models.geminiModel?.trim()
+      const geminiFallback = normalizeModelName(this.config.models.geminiModel)
       if (
         geminiFallback
         && geminiFallback !== modelName

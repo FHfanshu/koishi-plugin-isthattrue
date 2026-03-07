@@ -1,5 +1,6 @@
 import { ChatlunaAdapter } from '../services/chatluna'
 import { withTimeout } from './async'
+import { normalizeModelName } from './model'
 
 import type { PluginConfig } from '../types'
 
@@ -22,13 +23,13 @@ export function clipText(input: string, maxLength: number): string {
 }
 
 export function resolveSummaryModel(config: PluginConfig): string {
-  const explicit = config.models.summaryModel?.trim()
+  const explicit = normalizeModelName(config.models.summaryModel)
   if (explicit) return explicit
 
-  const gemini = config.models.geminiModel?.trim()
+  const gemini = normalizeModelName(config.models.geminiModel)
   if (gemini) return gemini
 
-  const controller = config.models.controllerModel?.trim()
+  const controller = normalizeModelName(config.models.controllerModel)
   if (controller) return controller
 
   return ''
@@ -44,7 +45,8 @@ export async function maybeSummarize(
   const maxChars = config.search.summaryMaxChars || 800
 
   if (!config.search.enableSummary) {
-    return clipText(text, maxChars)
+    logger.debug(`[Summary] 已禁用摘要压缩，保留原始输出: ${label}`)
+    return text
   }
 
   if (text.length <= maxChars) {

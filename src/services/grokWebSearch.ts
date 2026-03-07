@@ -1,4 +1,5 @@
 import { ChatlunaAdapter } from './chatluna'
+import { normalizeModelName } from '../utils/model'
 
 import type { PluginConfig } from '../types'
 
@@ -26,7 +27,7 @@ export class GrokWebSearchService {
       return []
     }
 
-    const model = this.config.models.grokModel?.trim()
+    const model = normalizeModelName(this.config.models.grokModel)
     if (!model) {
       this.logger.warn('GrokWebSearch: models.grokModel 未配置，跳过 Grok 搜索')
       return []
