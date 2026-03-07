@@ -10,6 +10,7 @@ const toolsSchema = Schema.intersect([
     quickToolDescription: Schema.string().default('用于联网事实核查与时效信息搜索。默认优先返回 GrokSearch 的 findings 与原始来源链接，供上层 Agent 直接使用。').description('快速搜索工具描述'),
     maxInputChars: Schema.number().min(100).max(10_000).default(1_200).description('Chatluna 工具单次输入文本最大字符数'),
     maxSources: Schema.number().min(1).max(20).default(5).description('Chatluna 工具返回来源链接数量上限'),
+    forceExposeSources: Schema.boolean().default(true).description('默认强制附带可直接发送给用户的原始来源链接区块，不由上层 LLM 自行决定是否附带'),
   }).description('Fact Check 工具'),
   Schema.object({
     deepSearchEnable: Schema.boolean().default(false).description('启用 DeepSearch 迭代搜索模式（同时注册 deep_search 工具）'),

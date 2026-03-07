@@ -188,6 +188,19 @@ class DeepSearchTool extends Tool {
     return `${Math.round(elapsedMs / 60_000)}min`
   }
 
+  private appendDirectSourcesBlock(output: string, sources: string[]): string {
+    if (!this.config.tools.forceExposeSources) {
+      return output
+    }
+
+    const directSources = [...new Set((sources || []).filter(Boolean))].slice(0, this.config.tools.maxSources || 5)
+    const sourceText = directSources.length > 0
+      ? directSources.map((source) => `- ${source}`).join('\n')
+      : '- 无'
+
+    return `${output}\n\n[DirectSendSources]\n以下原始链接为直接发送给用户用，不要改写、补全或重写。\n${sourceText}`
+  }
+
   private formatReport(report: DeepSearchReport): string {
     const sourceLimit = this.config.tools.maxSources || 5
     const findingLines = report.keyFindings.length > 0
@@ -200,7 +213,9 @@ class DeepSearchTool extends Tool {
 
     const confidence = Math.round(report.confidence * 100)
 
-    return `[DeepSearch]\n摘要: ${report.summary}\n轮次: ${report.rounds}\n置信度: ${confidence}%\n\n[KeyFindings]\n${findingLines}\n\n[Sources]\n${sourceLines}\n\n[Conclusion]\n${report.conclusion}`
+    const output = `[DeepSearch]\n摘要: ${report.summary}\n轮次: ${report.rounds}\n置信度: ${confidence}%\n\n[KeyFindings]\n${findingLines}\n\n[Sources]\n${sourceLines}\n\n[Conclusion]\n${report.conclusion}`
+
+    return this.appendDirectSourcesBlock(output, report.sources)
   }
 }
 

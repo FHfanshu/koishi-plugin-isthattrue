@@ -92,6 +92,19 @@ class FactCheckTool extends Tool {
     return items.map((s) => `- ${s}`).join('\n')
   }
 
+  private appendDirectSourcesBlock(output: string, sources: string[]): string {
+    if (!this.config.tools.forceExposeSources) {
+      return output
+    }
+
+    const directSources = [...new Set((sources || []).filter(Boolean))].slice(0, this.config.tools.maxSources)
+    const sourceText = directSources.length > 0
+      ? directSources.map((source) => `- ${source}`).join('\n')
+      : '- 无'
+
+    return `${output}\n\n[DirectSendSources]\n以下原始链接为直接发送给用户用，不要改写、补全或重写。\n${sourceText}`
+  }
+
   private createProviderTask(claim: string, provider: ToolProvider, index: number): Promise<ProviderTaskOutcome> {
     return withTimeout(
       this.subSearchAgent.deepSearchWithModel(
@@ -156,7 +169,7 @@ class FactCheckTool extends Tool {
 
     const sourceText = this.formatSourcesForContext(result.sources, this.config.tools.maxSources)
 
-    return `${this.buildInternalContextPreamble()}[FactCheckContext]
+    const output = `${this.buildInternalContextPreamble()}[FactCheckContext]
 模式: single-source
 视角: ${result.perspective}
 置信度: ${confidence}
@@ -164,6 +177,8 @@ class FactCheckTool extends Tool {
 
 [Sources]
 ${sourceText}`
+
+    return this.appendDirectSourcesBlock(output, result.sources)
   }
 
   private formatMultiResults(results: AgentSearchResult[]): string {
@@ -187,7 +202,7 @@ ${sourceText}`
     const dedupedSources = [...allSources].slice(0, this.config.tools.maxSources)
     parts.push('[Sources]')
     parts.push(this.formatSourcesForContext(dedupedSources, this.config.tools.maxSources))
-    return parts.join('\n')
+    return this.appendDirectSourcesBlock(parts.join('\n'), dedupedSources)
   }
 
   async _call(input: string): Promise<string> {

@@ -16,6 +16,7 @@ export interface ToolsConfig {
   quickToolDescription: string
   maxInputChars: number
   maxSources: number
+  forceExposeSources: boolean
   deepSearchEnable: boolean
   webFetchEnable: boolean
   webFetchToolName: string
