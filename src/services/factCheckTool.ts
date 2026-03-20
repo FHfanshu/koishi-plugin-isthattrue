@@ -418,6 +418,12 @@ export function registerFactCheckTool(ctx: Ctx, config: PluginConfig): void {
       logger.info(`[ChatlunaTool] 注册工具: ${quickToolName}`)
 
       const disposeQuick = chatluna.platform.registerTool(quickToolName, {
+        description: quickToolDescription,
+        meta: {
+          source: 'extension',
+          group: 'fact-check',
+          tags: ['fact-check', 'search'],
+        },
         createTool() {
           const tool = new FactCheckTool(ctx, config, quickToolName, quickToolDescription)
           const resolvedName = sanitizeToolName(tool.name, '')

@@ -134,6 +134,12 @@ export function registerWebFetchTool(ctx: Ctx, config: PluginConfig): void {
     logger.info(`[WebFetchTool] 注册工具: ${toolName}`)
 
     const dispose = chatluna.platform.registerTool(toolName, {
+      description: toolDescription,
+      meta: {
+        source: 'extension',
+        group: 'fact-check',
+        tags: ['web-fetch', 'fetch', 'search'],
+      },
       createTool() {
         const tool = new WebFetchTool(ctx, config, toolName, toolDescription)
         const resolvedName = sanitizeToolName(tool.name, '')
